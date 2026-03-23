@@ -42,10 +42,10 @@ jobs:
             alpine:3.21 sh -c '
               apk add --no-cache \
                 build-base cmake \
-                flac-dev flac-static \
-                libupnp-dev libupnp-static \
+                flac-dev \
+                libupnp-dev \
                 mpg123-dev \
-                libvorbis-dev libvorbis-static libogg-dev libogg-static \
+                libvorbis-dev libogg-dev \
                 ffmpeg-dev \
                 linux-headers
 
@@ -100,10 +100,10 @@ jobs:
             alpine:3.21 sh -c '
               apk add --no-cache \
                 build-base cmake \
-                flac-dev flac-static \
-                libupnp-dev libupnp-static \
+                flac-dev \
+                libupnp-dev \
                 mpg123-dev \
-                libvorbis-dev libvorbis-static libogg-dev libogg-static \
+                libvorbis-dev libogg-dev \
                 ffmpeg-dev \
                 linux-headers
 
