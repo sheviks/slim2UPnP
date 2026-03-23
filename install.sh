@@ -292,30 +292,35 @@ install_runtime_deps() {
 
     case "$DISTRO_ID" in
         ubuntu|debian)
-            if ! dpkg -l libflac8 libupnp17 2>/dev/null | grep -q "^ii"; then
-                step "Installing runtime libraries..."
-                apt-get update -qq
-                apt-get install -y -qq libflac8 libupnp17 libmpg123-0 \
-                    libvorbisfile3 libavcodec-extra libavutil58 2>/dev/null || \
-                apt-get install -y -qq libflac12 libupnp17 libmpg123-0 \
-                    libvorbisfile3 libavcodec60 libavutil58 2>/dev/null || \
-                    warn "Some runtime libraries may be missing — install manually if needed"
-            fi
+            step "Installing runtime libraries..."
+            apt-get update -qq
+            # Try current naming first, then older package names
+            apt-get install -y -qq libflac12 libupnp17 libmpg123-0 \
+                libvorbisfile3 libavcodec60 libavutil58 2>/dev/null || \
+            apt-get install -y -qq libflac8 libupnp17 libmpg123-0 \
+                libvorbisfile3 libavcodec-extra libavutil58 2>/dev/null || \
+                warn "Some runtime libraries could not be installed — check apt output above"
             ;;
         fedora)
-            if ! rpm -q flac-libs libupnp 2>/dev/null | grep -q "^flac"; then
-                step "Installing runtime libraries..."
-                dnf install -y -q flac-libs libupnp mpg123-libs \
-                    libvorbis ffmpeg-free-libs 2>/dev/null || \
-                    warn "Some runtime libraries may be missing — install manually if needed"
+            step "Installing runtime libraries..."
+            # Core libraries (always needed)
+            dnf install -y flac-libs libupnp || \
+                warn "Failed to install core libraries (flac-libs, libupnp)"
+            # Optional codec libraries
+            dnf install -y mpg123-libs libvorbis 2>/dev/null || true
+            # FFmpeg — try ffmpeg-free-libs first, fall back to ffmpeg-libs (RPM Fusion)
+            if ! dnf install -y ffmpeg-free-libs 2>/dev/null; then
+                if ! dnf install -y ffmpeg-libs 2>/dev/null; then
+                    warn "FFmpeg libraries not found. Install manually if needed:"
+                    echo "    sudo dnf install ffmpeg-free-libs"
+                    echo "  Or enable RPM Fusion: https://rpmfusion.org/"
+                fi
             fi
             ;;
         arch|manjaro)
-            if ! pacman -Q flac libupnp 2>/dev/null | grep -q "^flac"; then
-                step "Installing runtime libraries..."
-                pacman -S --noconfirm --needed flac libupnp mpg123 libvorbis ffmpeg 2>/dev/null || \
-                    warn "Some runtime libraries may be missing — install manually if needed"
-            fi
+            step "Installing runtime libraries..."
+            pacman -S --noconfirm --needed flac libupnp mpg123 libvorbis ffmpeg || \
+                warn "Some runtime libraries could not be installed — check pacman output above"
             ;;
         gentoo|gentooplayer)
             # Gentoo users typically have these already
