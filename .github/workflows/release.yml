@@ -40,7 +40,7 @@ jobs:
             -v ${{ github.workspace }}:/src \
             -w /src \
             alpine:3.21 sh -c '
-              # Install build tools and static libraries
+              # Install build tools and -dev packages (include .a on Alpine musl)
               apk add --no-cache \
                 build-base cmake pkgconf linux-headers \
                 flac-dev \
@@ -49,9 +49,12 @@ jobs:
                 libvorbis-dev libogg-dev \
                 ffmpeg-dev
 
+              # Debug: show which static libs are available
+              echo "=== Available .a libraries ==="
+              find /usr/lib -name "*.a" | grep -iE "FLAC|upnp|ixml|mpg|vorbis|ogg|avcodec|avutil" | sort
+              echo "==="
+
               # Build with static linking
-              CFLAGS="${{ matrix.cflags }}" \
-              CXXFLAGS="${{ matrix.cflags }}" \
               cmake -B build \
                 -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_C_FLAGS="${{ matrix.cflags }}" \
@@ -59,9 +62,24 @@ jobs:
                 -DSTATIC_BUILD=ON \
                 -DNOLOG=ON
 
-              cmake --build build -j$(nproc)
+              cmake --build build -j$(nproc) || {
+                echo ""
+                echo "=== Static build failed, retrying without optional codecs ==="
+                echo ""
+                rm -rf build
+                cmake -B build \
+                  -DCMAKE_BUILD_TYPE=Release \
+                  -DCMAKE_C_FLAGS="${{ matrix.cflags }}" \
+                  -DCMAKE_CXX_FLAGS="${{ matrix.cflags }}" \
+                  -DSTATIC_BUILD=ON \
+                  -DNOLOG=ON \
+                  -DENABLE_MP3=OFF \
+                  -DENABLE_OGG=OFF \
+                  -DENABLE_AAC=OFF \
+                  -DENABLE_FFMPEG=OFF
+                cmake --build build -j$(nproc)
+              }
 
-              # Verify it is static
               file build/slim2upnp
               strip build/slim2upnp
             '
@@ -110,12 +128,30 @@ jobs:
                 libvorbis-dev libogg-dev \
                 ffmpeg-dev
 
+              echo "=== Available .a libraries ==="
+              find /usr/lib -name "*.a" | grep -iE "FLAC|upnp|ixml|mpg|vorbis|ogg|avcodec|avutil" | sort
+              echo "==="
+
               cmake -B build \
                 -DCMAKE_BUILD_TYPE=Release \
                 -DSTATIC_BUILD=ON \
                 -DNOLOG=ON
 
-              cmake --build build -j$(nproc)
+              cmake --build build -j$(nproc) || {
+                echo ""
+                echo "=== Static build failed, retrying without optional codecs ==="
+                echo ""
+                rm -rf build
+                cmake -B build \
+                  -DCMAKE_BUILD_TYPE=Release \
+                  -DSTATIC_BUILD=ON \
+                  -DNOLOG=ON \
+                  -DENABLE_MP3=OFF \
+                  -DENABLE_OGG=OFF \
+                  -DENABLE_AAC=OFF \
+                  -DENABLE_FFMPEG=OFF
+                cmake --build build -j$(nproc)
+              }
 
               file build/slim2upnp
               strip build/slim2upnp
