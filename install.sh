@@ -41,8 +41,17 @@ detect_arch() {
     ARCH_RAW="$(uname -m)"
     case "$ARCH_RAW" in
         x86_64|amd64)
-            # Detect AVX2 support for x64-v3 variant
-            if grep -q avx2 /proc/cpuinfo 2>/dev/null; then
+            # Check all x86-64-v3 required flags (not just AVX2)
+            # x86-64-v3 requires: AVX, AVX2, FMA, BMI1, BMI2, LZCNT, MOVBE, XSAVE
+            local v3_flags="avx2 fma bmi1 bmi2"
+            local has_all=true
+            for flag in $v3_flags; do
+                if ! grep -qw "$flag" /proc/cpuinfo 2>/dev/null; then
+                    has_all=false
+                    break
+                fi
+            done
+            if [ "$has_all" = true ]; then
                 ARCH_VARIANT="x64-v3"
                 ARCH_DESC="x86_64 AVX2"
             else
@@ -215,18 +224,44 @@ download_binary() {
     if "$tmp_dir/$binary_file" --version >/dev/null 2>&1; then
         info "Binary verified OK"
     else
-        # Show which libraries are missing
-        error "Downloaded binary failed to execute"
-        if command -v ldd >/dev/null 2>&1; then
-            local missing="$(ldd "$tmp_dir/$binary_file" 2>&1 | grep "not found")"
-            if [ -n "$missing" ]; then
-                error "Missing libraries:"
-                echo "$missing" | while read -r line; do echo "    $line"; done
+        # If v3 failed, try falling back to v2 (Illegal Instruction on some CPUs)
+        if [ "$ARCH_VARIANT" = "x64-v3" ]; then
+            warn "AVX2 binary failed (possible Illegal Instruction), trying baseline x64-v2..."
+            ARCH_VARIANT="x64-v2"
+            ARCH_DESC="x86_64 baseline (fallback)"
+            local fallback_file="slim2upnp-x64-v2"
+            local fallback_url="https://github.com/$GITHUB_REPO/releases/download/$latest_tag/$fallback_file"
+            step "Downloading $fallback_file..."
+            if curl -fSL -o "$tmp_dir/$fallback_file" "$fallback_url" 2>/dev/null; then
+                chmod +x "$tmp_dir/$fallback_file"
+                if "$tmp_dir/$fallback_file" --version >/dev/null 2>&1; then
+                    info "Fallback binary x64-v2 verified OK"
+                    binary_file="$fallback_file"
+                else
+                    error "Fallback binary also failed"
+                    error "Build from source instead: sudo ./install.sh --build"
+                    rm -rf "$tmp_dir"
+                    return 1
+                fi
+            else
+                error "Failed to download fallback binary"
+                rm -rf "$tmp_dir"
+                return 1
             fi
+        else
+            # Show which libraries are missing
+            error "Downloaded binary failed to execute"
+            if command -v ldd >/dev/null 2>&1; then
+                local missing="$(ldd "$tmp_dir/$binary_file" 2>&1 | grep "not found")"
+                if [ -n "$missing" ]; then
+                    error "Missing libraries:"
+                    echo "$missing" | while read -r line; do echo "    $line"; done
+                fi
+            fi
+            error "Install missing libraries, or build from source: sudo ./install.sh --build"
+            rm -rf "$tmp_dir"
+            return 1
         fi
-        error "Install missing libraries, or build from source: sudo ./install.sh --build"
-        rm -rf "$tmp_dir"
-        return 1
     fi
 
     BINARY_SRC="$tmp_dir/$binary_file"
