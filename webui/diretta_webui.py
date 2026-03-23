@@ -162,6 +162,23 @@ def render_setting_input(setting, current_value):
             attrs += f' max="{setting["max"]}"'
         return f'<input {attrs}>'
 
+    if stype == 'scan_select':
+        scan_endpoint = escape(setting.get('scan_endpoint', '/api/scan-renderers'))
+        scan_label = escape(setting.get('scan_label', 'Scan'))
+        return (
+            f'<div class="scan-group">\n'
+            f'  <input type="text" name="{key}" id="input-{key}" value="{value}"'
+            f' placeholder="Click Scan or type a name">\n'
+            f'  <button type="button" class="scan-btn" '
+            f'onclick="scanRenderers(\'{key}\', \'{scan_endpoint}\')">'
+            f'{scan_label}</button>\n'
+            f'  <select id="select-{key}" style="display:none" '
+            f'onchange="document.getElementById(\'input-{key}\').value=this.value">\n'
+            f'  </select>\n'
+            f'  <div id="scan-status-{key}" class="description"></div>\n'
+            f'</div>'
+        )
+
     # Default: text input
     placeholder = escape(str(setting.get('default', '')))
     return (
@@ -253,6 +270,14 @@ class ConfigHandler(BaseHTTPRequestHandler):
         self.send_header('Location', location)
         self.end_headers()
 
+    def _send_json(self, data, status=200):
+        body = json.dumps(data).encode('utf-8')
+        self.send_response(status)
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):
         if self.path.startswith('/static/'):
             self._serve_static()
@@ -261,6 +286,10 @@ class ConfigHandler(BaseHTTPRequestHandler):
         if self.path == '/favicon.ico':
             self.send_response(204)
             self.end_headers()
+            return
+
+        if self.path == '/api/scan-renderers':
+            self._handle_scan_renderers()
             return
 
         # Main page (with optional flash from query string)
@@ -316,6 +345,40 @@ class ConfigHandler(BaseHTTPRequestHandler):
                 self._send_redirect(f'/?err=Settings saved but restart failed: {msg}')
         else:
             self._send_redirect('/?ok=Settings saved.')
+
+    def _handle_scan_renderers(self):
+        """Run slim2upnp --list-renderers and return JSON list."""
+        scan_cmd = self.profile.get('scan_command')
+        if not scan_cmd:
+            self._send_json({'error': 'No scan command configured'}, 400)
+            return
+
+        try:
+            result = subprocess.run(
+                scan_cmd, shell=True,
+                capture_output=True, text=True, timeout=15
+            )
+            renderers = []
+            for line in result.stdout.splitlines():
+                line = line.strip()
+                # Parse lines like:  #1  Diretta Renderer
+                if line.startswith('#') and '  ' in line:
+                    # Extract name after the index
+                    parts = line.split('  ', 1)
+                    if len(parts) >= 2:
+                        name = parts[1].strip()
+                        if name:
+                            renderers.append({'name': name})
+                # Parse UUID lines
+                elif line.startswith('UUID:'):
+                    if renderers:
+                        renderers[-1]['uuid'] = line.split(':', 1)[1].strip()
+
+            self._send_json({'renderers': renderers})
+        except subprocess.TimeoutExpired:
+            self._send_json({'error': 'Scan timed out (15s)'}, 500)
+        except Exception as e:
+            self._send_json({'error': str(e)}, 500)
 
     def _handle_restart(self):
         """Restart service only (no config change)."""

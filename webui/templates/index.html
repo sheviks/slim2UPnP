@@ -39,6 +39,59 @@
                 toggle.classList.toggle('open');
             });
         });
+
+        // Scan for renderers (used by scan_select fields)
+        function scanRenderers(key, endpoint) {
+            var btn = document.querySelector('#input-' + key).parentElement.querySelector('.scan-btn');
+            var select = document.getElementById('select-' + key);
+            var status = document.getElementById('scan-status-' + key);
+            var input = document.getElementById('input-' + key);
+
+            btn.disabled = true;
+            btn.textContent = 'Scanning...';
+            status.textContent = '';
+            select.style.display = 'none';
+
+            fetch(endpoint)
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    btn.disabled = false;
+                    btn.textContent = 'Scan for renderers';
+
+                    if (data.error) {
+                        status.textContent = 'Error: ' + data.error;
+                        return;
+                    }
+
+                    var renderers = data.renderers || [];
+                    if (renderers.length === 0) {
+                        status.textContent = 'No renderers found. Check that your renderer is powered on.';
+                        return;
+                    }
+
+                    // Build dropdown
+                    select.innerHTML = '<option value="">-- Select a renderer --</option>';
+                    renderers.forEach(function(r) {
+                        var opt = document.createElement('option');
+                        opt.value = r.name;
+                        opt.textContent = r.name + (r.uuid ? ' (' + r.uuid + ')' : '');
+                        select.appendChild(opt);
+                    });
+                    select.style.display = 'block';
+                    status.textContent = renderers.length + ' renderer(s) found.';
+
+                    // Auto-select if only one
+                    if (renderers.length === 1) {
+                        input.value = renderers[0].name;
+                        select.value = renderers[0].name;
+                    }
+                })
+                .catch(function(err) {
+                    btn.disabled = false;
+                    btn.textContent = 'Scan for renderers';
+                    status.textContent = 'Scan failed: ' + err.message;
+                });
+        }
     </script>
 </body>
 </html>

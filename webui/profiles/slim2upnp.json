@@ -3,6 +3,7 @@
     "service_name": "slim2upnp",
     "config_path": "/etc/default/slim2upnp",
     "config_type": "shell_vars",
+    "scan_command": "slim2upnp --list-renderers 2>/dev/null",
     "groups": [
         {
             "name": "UPnP Renderer",
@@ -10,10 +11,12 @@
             "settings": [
                 {
                     "key": "RENDERER",
-                    "type": "text",
+                    "type": "scan_select",
                     "label": "Renderer Name",
-                    "description": "Name of your UPnP renderer (substring match, case-insensitive). Run 'slim2upnp --list-renderers' to find available renderers.",
-                    "default": ""
+                    "description": "Select your UPnP renderer from the list, or type a name manually.",
+                    "default": "",
+                    "scan_endpoint": "/api/scan-renderers",
+                    "scan_label": "Scan for renderers"
                 },
                 {
                     "key": "RENDERER_URL",
