@@ -1,31 +1,27 @@
 /**
  * @file Config.h
- * @brief Configuration for slim2diretta
+ * @brief Configuration for slim2UPnP
  */
 
-#ifndef SLIM2DIRETTA_CONFIG_H
-#define SLIM2DIRETTA_CONFIG_H
+#ifndef SLIM2UPNP_CONFIG_H
+#define SLIM2UPNP_CONFIG_H
 
 #include <string>
 #include <cstdint>
 
 struct Config {
     // LMS connection
-    std::string lmsServer;              // empty = autodiscovery (Phase 6)
+    std::string lmsServer;              // empty = autodiscovery
     uint16_t lmsPort = 3483;            // Slimproto TCP port
-    std::string playerName = "slim2diretta";
+    std::string playerName = "slim2UPnP";
     std::string macAddress;             // empty = auto-generate
 
-    // Diretta
-    int direttaTarget = -1;             // -1 = not set (required)
-    int threadMode = 1;                 // SDK thread priority mode
-    unsigned int cycleTime = 10000;     // microseconds between packets
-    bool cycleTimeAuto = true;          // compute from MTU + format
-    unsigned int mtu = 0;               // 0 = auto-detect
-    std::string transferMode;           // "auto","varmax","varauto","fixauto","random" (empty=auto)
-    unsigned int infoCycle = 100000;    // Info packet cycle µs (default 100ms)
-    unsigned int cycleMinTime = 0;      // Min cycle for RANDOM mode (0 = unused)
-    unsigned int targetProfileLimitTime = 0;   // 0=SelfProfile (stable), >0=TargetProfile(µs)
+    // UPnP renderer
+    std::string rendererName;           // empty = first discovered, or partial match
+    std::string rendererUUID;           // empty = use name match
+    std::string rendererURL;            // direct description URL (skip SSDP)
+    uint16_t httpServerPort = 0;        // 0 = auto-select
+    std::string networkInterface;       // empty = auto-detect
 
     // Audio
     int maxSampleRate = 1536000;
@@ -37,8 +33,8 @@ struct Config {
     bool quiet = false;
 
     // Actions
-    bool listTargets = false;
+    bool listRenderers = false;
     bool showVersion = false;
 };
 
-#endif // SLIM2DIRETTA_CONFIG_H
+#endif // SLIM2UPNP_CONFIG_H

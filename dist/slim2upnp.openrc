@@ -1,0 +1,27 @@
+#!/sbin/openrc-run
+# OpenRC init script for slim2UPnP
+# Install to: /etc/init.d/slim2upnp
+
+description="slim2UPnP - Slimproto to UPnP bridge"
+
+command="/usr/local/bin/slim2upnp"
+command_args="${SLIM2UPNP_OPTS}"
+command_background=true
+pidfile="/run/slim2upnp.pid"
+output_log="/var/log/slim2upnp.log"
+error_log="/var/log/slim2upnp.log"
+
+# Load configuration
+cfgfile="/etc/conf.d/slim2upnp"
+
+depend() {
+    need net
+    after net
+}
+
+start_pre() {
+    if [ -f "${cfgfile}" ]; then
+        . "${cfgfile}"
+        command_args="${SLIM2UPNP_OPTS}"
+    fi
+}

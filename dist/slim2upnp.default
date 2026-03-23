@@ -1,0 +1,68 @@
+# /etc/default/slim2upnp (systemd) or /etc/conf.d/slim2upnp (OpenRC)
+# Configuration for slim2UPnP service
+#
+# All options are passed via SLIM2UPNP_OPTS.
+# Run 'slim2upnp --help' for full option list.
+# Run 'slim2upnp --list-renderers' to find available UPnP renderers.
+#
+# ============================================================================
+# RENDERER SELECTION (required)
+# ============================================================================
+#
+# By name (substring match — case-insensitive):
+#SLIM2UPNP_OPTS="-r \"Diretta Renderer\""
+#
+# By UUID (exact match):
+#SLIM2UPNP_OPTS="--renderer-uuid uuid:diretta-renderer-12345"
+#
+# By direct URL (skip SSDP discovery — useful for cross-subnet):
+#SLIM2UPNP_OPTS="--renderer-url http://192.168.1.104:4005/description.xml"
+#
+# ============================================================================
+# LMS CONNECTION
+# ============================================================================
+#
+# LMS is auto-discovered if not specified.
+# To specify explicitly:
+#SLIM2UPNP_OPTS="-r \"Diretta Renderer\" -s 192.168.1.10"
+#
+# With custom player name:
+#SLIM2UPNP_OPTS="-r \"Diretta Renderer\" -s 192.168.1.10 -n \"Living Room\""
+#
+# ============================================================================
+# AUDIO OPTIONS
+# ============================================================================
+#
+# Disable DSD (force PCM only):
+#SLIM2UPNP_OPTS="-r \"Diretta Renderer\" --no-dsd"
+#
+# Use FFmpeg decoder backend:
+#SLIM2UPNP_OPTS="-r \"Diretta Renderer\" --decoder ffmpeg"
+#
+# ============================================================================
+# NETWORK OPTIONS
+# ============================================================================
+#
+# Force specific network interface:
+#SLIM2UPNP_OPTS="-r \"Diretta Renderer\" --interface eth0"
+#
+# Force HTTP server port (default: auto):
+#SLIM2UPNP_OPTS="-r \"Diretta Renderer\" --http-port 8080"
+#
+# ============================================================================
+# EXAMPLES
+# ============================================================================
+#
+# Minimal (auto-discover LMS, find renderer by name):
+#SLIM2UPNP_OPTS="-r \"Diretta Renderer\""
+#
+# Full setup with verbose logging:
+#SLIM2UPNP_OPTS="-r \"Diretta Renderer\" -s 192.168.1.10 -n \"Music Room\" -v"
+#
+# GentooPlayer / AudioLinux typical setup:
+#SLIM2UPNP_OPTS="--renderer-url http://192.168.1.104:4005/description.xml -s 192.168.1.10 -n slim2UPnP"
+#
+# ============================================================================
+
+# Default: empty (slim2upnp will fail without at least a renderer)
+SLIM2UPNP_OPTS=""

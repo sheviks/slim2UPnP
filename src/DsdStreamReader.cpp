@@ -11,7 +11,7 @@
 
 #include "DsdStreamReader.h"
 #include "DsdProcessor.h"
-#include "globals.h"
+#include "LogLevel.h"
 
 #include <algorithm>
 #include <cstring>

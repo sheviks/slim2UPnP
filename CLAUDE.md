@@ -6,6 +6,7 @@ This file provides guidance to Claude Code when working with this repository.
 
 **slim2UPnP** is a Slimproto→UPnP bridge with native DSD support. It replaces squeeze2upnp (by Philippe/Ralphy) for users who want to use LMS with a UPnP renderer (e.g., DirettaRendererUPnP) while having full DSD playback capability.
 
+**Version**: 0.0.1 (initial test release)
 **License**: MIT (no GPL code copied). Slimproto protocol implemented from public documentation.
 
 ## Architecture
@@ -16,13 +17,43 @@ LMS (network)
     → SlimprotoClient (TCP port 3483) : control protocol
     → HttpStreamClient (port 9000) : encoded audio stream from LMS
     → Decoder (FLAC/PCM/DSD — native or FFmpeg backend)
-    → Mini HTTP Server : serves decoded audio to UPnP renderer
-    → UPnP Controller (AVTransport) : controls the UPnP renderer
+    → AudioHttpServer (auto port) : serves decoded audio to UPnP renderer (pull model)
+    → UPnPController (SSDP + AVTransport SOAP) : controls the UPnP renderer
       → UPnP Renderer (e.g., DirettaRendererUPnP)
         → DAC
 ```
 
-**Threading**: main (init/signals) + slimproto (TCP LMS) + audio (HTTP→decode→serve) + UPnP controller
+**Audio flow** (pull model): decode thread fills ring buffer → UPnP renderer pulls via HTTP GET from AudioHttpServer. This is the inverse of slim2diretta (push to Diretta).
+
+**Threading**: main (init/signals) + slimproto (TCP LMS) + audio (HTTP→decode→ring buffer) + HTTP server (serve to renderer)
+
+## File Structure
+
+```
+slim2UPnP/
+  src/
+    main.cpp                  — Entry point, CLI, orchestration (adapted from slim2diretta)
+    AudioHttpServer.h/cpp     — Mini HTTP server + ring buffer (replaces DirettaSync)
+    UPnPController.h/cpp      — SSDP discovery + AVTransport/SOAP control (libupnp)
+    Config.h                  — Configuration struct
+    LogLevel.h                — Logging macros (LOG_ERROR/WARN/INFO/DEBUG)
+    SlimprotoClient.h/cpp     — Slimproto TCP protocol client (from slim2diretta)
+    SlimprotoMessages.h       — Binary protocol message structs (from slim2diretta)
+    HttpStreamClient.h/cpp    — HTTP audio stream fetcher (from slim2diretta)
+    Decoder.h/cpp             — Decoder factory + abstract base (from slim2diretta)
+    FlacDecoder.h/cpp         — FLAC decoder via libFLAC (from slim2diretta)
+    PcmDecoder.h/cpp          — PCM/WAV/AIFF header parser (from slim2diretta)
+    DsdProcessor.h/cpp        — DSD format conversions (from slim2diretta)
+    DsdStreamReader.h/cpp     — DSF/DFF container parser (from slim2diretta)
+    Mp3Decoder.h/cpp          — MP3 decoder via libmpg123 (optional, from slim2diretta)
+    OggDecoder.h/cpp          — Ogg Vorbis decoder (optional, from slim2diretta)
+    AacDecoder.h/cpp          — AAC decoder via fdk-aac (optional, from slim2diretta)
+    FfmpegDecoder.h/cpp       — FFmpeg decoder backend (optional, from slim2diretta)
+  CMakeLists.txt              — Build system (libupnp instead of Diretta SDK)
+  README.md                   — User documentation
+  CHANGELOG.md                — Version history
+  LICENSE                     — MIT license
+```
 
 ## Related Projects (same developer, same machine)
 
@@ -34,35 +65,23 @@ LMS (network)
 
 ### Code reuse from slim2diretta
 
-The following components are directly reusable (copy, not shared repo):
+The following components are copied (not shared repo) from slim2diretta:
 - `SlimprotoClient.cpp/h` — Slimproto TCP protocol client
 - `SlimprotoMessages.h` — Binary protocol message structs
 - `HttpStreamClient.cpp/h` — HTTP audio stream fetcher
-- `Decoder.h` — Decoder abstract interface
-- `FlacDecoder.cpp/h` — FLAC decoder (libFLAC)
-- `PcmDecoder.cpp/h` — PCM/WAV/AIFF header parser
-- `Mp3Decoder.cpp/h` — MP3 decoder (optional)
-- `OggDecoder.cpp/h` — Ogg Vorbis decoder (optional)
-- `AacDecoder.cpp/h` — AAC decoder (optional)
-- `FfmpegDecoder.cpp/h` — FFmpeg decoder backend (optional)
-- `DsdProcessor.cpp/h` — DSD conversions
-- `Config.h` — Configuration struct (adapt for UPnP)
+- `Decoder.h/cpp` — Decoder factory + abstract interface
+- `FlacDecoder.cpp/h`, `PcmDecoder.cpp/h` — Always-on decoders
+- `Mp3Decoder.cpp/h`, `OggDecoder.cpp/h`, `AacDecoder.cpp/h` — Optional decoders
+- `FfmpegDecoder.cpp/h` — Optional FFmpeg backend
+- `DsdProcessor.cpp/h`, `DsdStreamReader.cpp/h` — DSD handling
 
-### New components to develop
+### Components developed for slim2UPnP
 
-- **UPnPController** — Discover UPnP renderers (SSDP), control playback (AVTransport/SetAVTransportURI, Play, Stop, Pause)
-- **AudioHttpServer** — Mini HTTP server that serves decoded audio (PCM/DSD) to the UPnP renderer
-- **main.cpp** — Entry point, CLI, orchestration (adapted from slim2diretta)
-
-## Why slim2UPnP instead of squeeze2upnp?
-
-| | squeeze2upnp | slim2UPnP |
-|---|---|---|
-| **DSD** | No native DSD | Full DSD support (DSF/DFF/DoP) |
-| **Architecture** | Squeezelite + bridge | Single binary |
-| **Slimproto** | Delegated to Squeezelite | Native implementation |
-| **Decoder** | External (Squeezelite) | Internal (libFLAC, FFmpeg) |
-| **Control** | Complex IPC | Direct internal signaling |
+- **UPnPController** (`src/UPnPController.h/cpp`) — SSDP discovery, direct URL connection, AVTransport/RenderingControl/ConnectionManager SOAP control via libupnp
+- **AudioHttpServer** (`src/AudioHttpServer.h/cpp`) — Mini HTTP server with SPSC ring buffer, WAV/DSF header generation, PCM bit depth conversion
+- **main.cpp** (`src/main.cpp`) — Orchestration adapted from slim2diretta: stream callback, DSD/PCM paths, gapless chaining, connection loop
+- **Config.h** (`src/Config.h`) — UPnP-specific config (renderer name/UUID/URL, HTTP port, network interface)
+- **LogLevel.h** (`src/LogLevel.h`) — Standalone logging (no DirettaSync dependency)
 
 ## Code Style (same as slim2diretta)
 
@@ -73,6 +92,20 @@ The following components are directly reusable (copy, not shared repo):
 - **Constants**: `UPPER_SNAKE_CASE`
 - **Globals**: `g_camelCase`
 - **Indentation**: 4 spaces
+
+## Key Design Decisions
+
+### Pull model (vs push in slim2diretta)
+slim2diretta pushes audio packets to the Diretta target. slim2UPnP uses a **pull model**: the UPnP renderer connects to AudioHttpServer via HTTP GET and pulls audio data. This inversion means:
+- AudioHttpServer has a ring buffer (producer: decode thread, consumer: HTTP server thread)
+- Flow control via ring buffer level (writeAudio blocks when full, handleClient blocks when empty)
+- Gapless: same-format tracks continue the HTTP stream without closing the connection
+
+### Direct renderer connection (`--renderer-url`)
+SSDP multicast doesn't work in all environments (WSL2, cross-subnet). The `--renderer-url` option allows direct connection to a renderer's description XML, bypassing SSDP entirely.
+
+### WAV streaming
+PCM audio is served as WAV with data chunk size = 0x7FFFFFFF (streaming unknown length). This is universally supported by UPnP renderers. The AudioHttpServer converts S32_LE MSB-aligned decoder output to target bit depth (16/24/32) at write time.
 
 ## Slimproto Protocol
 
@@ -90,26 +123,24 @@ Key messages: HELO (registration), STAT (status), strm (stream control), audg (v
 - STMs: Stream started (first bytes received)
 - STMu: Track ended naturally
 
-## UPnP Protocol (new for this project)
+## UPnP Protocol
 
-### Required UPnP services
+### Implemented UPnP services
 - **AVTransport**: SetAVTransportURI, Play, Stop, Pause, GetPositionInfo, GetTransportInfo
-- **RenderingControl**: SetVolume, GetVolume (pass-through or force 100%)
-- **ConnectionManager**: GetProtocolInfo (to check supported formats)
+- **RenderingControl**: SetVolume (force 100%), GetVolume
+- **ConnectionManager**: GetProtocolInfo (check supported formats)
 
 ### Discovery
-- SSDP (Simple Service Discovery Protocol) on multicast 239.255.255.250:1900
-- Search for `urn:schemas-upnp-org:device:MediaRenderer:1`
+- SSDP via `UpnpSearchAsync` for `urn:schemas-upnp-org:device:MediaRenderer:1`
+- Direct connection via `--renderer-url` (UpnpDownloadXmlDoc + XML parsing)
 
-### Libraries to consider
-- **libupnp** (pupnp) — C library, used by many UPnP projects
-- **GUPnP** — GLib-based, higher level
-- Custom minimal implementation (if we want zero dependencies)
+### Library
+**libupnp (pupnp)** — same library as DirettaRendererUPnP (device side). slim2UPnP uses the control point side (`UpnpRegisterClient`, `UpnpSearchAsync`, `UpnpSendAction`).
 
 ## Decoder Routing (from slim2diretta)
 
 - **`format=p` (PCM/WAV/AIFF)**: Always uses native `PcmDecoder` (reads WAV/AIFF headers for true sample rate)
-- **`format=d` (DSD)**: Always uses native DSD path (raw bitstream, not decoded)
+- **`format=d` (DSD)**: Always uses native DSD path (raw bitstream via DsdStreamReader)
 - **`format=f` (FLAC), MP3, AAC, OGG**: Use FFmpeg when `--decoder ffmpeg` is active, native otherwise
 
 ## Lessons Learned from slim2diretta (important pitfalls)
@@ -122,27 +153,29 @@ Key messages: HELO (registration), STAT (status), strm (stream control), audg (v
 
 ### Bit Depth
 - All decoders output MSB-aligned int32_t
-- Open Diretta/DAC at 24-bit for sources ≤24-bit, 32-bit only for true 32-bit sources
-- Some DACs report 32-bit support but physically limited to 24-bit → white noise
+- Serve 24-bit WAV for sources ≤24-bit, 32-bit only for true 32-bit sources
+- Some DACs/renderers report 32-bit support but physically limited to 24-bit → white noise
 
 ### Gapless
-- Send silence buffers before ring buffer drains (Roon interprets underruns as errors)
 - STMd sent at HTTP EOF, but decode cache may still have minutes of audio
-- joinWorkerWithTimeout(1000ms) prevents indefinite blocking during format transitions
+- Shared decode cache persists across gapless same-format tracks
+- 2-second gapless wait window before declaring track end
 
 ### Startup
-- Retry target/server discovery indefinitely (important for systems without systemd restart like GentooPlayer/OpenRC)
+- Retry renderer/server discovery indefinitely (important for systems without systemd restart like GentooPlayer/OpenRC)
 
 ## Build System
 
 CMake with auto-detection (same pattern as slim2diretta):
 - x64-v2 (baseline), x64-v3 (AVX2), x64-v4 (AVX-512)
 - aarch64 (RPi4), aarch64-k16 (RPi5 16KB pages)
+- Static build option: `-DSTATIC_BUILD=ON`
+- Production build (no verbose logging): `-DNOLOG=ON`
 
 ## Dependencies
 
 - **libFLAC** (BSD-3-Clause) for FLAC decoding
-- **libupnp** (or equivalent) for UPnP control
+- **libupnp** (BSD) for UPnP control point (SSDP + SOAP + ixml)
 - **POSIX threads** (pthreads)
 - **C++17 runtime**
 - **Optional**: libmpg123 (MP3), libvorbis (Ogg), fdk-aac (AAC)
@@ -152,15 +185,16 @@ CMake with auto-detection (same pattern as slim2diretta):
 
 Unlike slim2diretta (which depends on the proprietary Diretta SDK), slim2UPnP has **zero proprietary dependencies**. This enables:
 
-- **Precompiled binaries** downloadable directly from GitHub Releases — no dependency on Filippo (GentooPlayer) or Piero (AudioLinux) for builds
-- **All Linux platforms**: x64, aarch64 (RPi4/5), armhf — single CI pipeline
-- **Windows port** feasible: Slimproto is standard TCP, UPnP is cross-platform, libFLAC/FFmpeg exist on Windows. Adaptations needed: pthreads → std::thread, RT priorities → Windows MMCSS, SSDP multicast
+- **Precompiled static binaries** downloadable directly from GitHub Releases — no compilation needed for end users
+- **Static builds** portable across distros of the same architecture (`-DSTATIC_BUILD=ON`)
+- **Binaries are architecture-specific**: an x86_64 binary does not run on aarch64. Releases should provide separate binaries per architecture (x64-v2, x64-v3, aarch64)
+- **All Linux platforms**: x64, aarch64 (RPi4/5) — single CI pipeline
+- **Windows port** feasible: standard TCP + UPnP + libFLAC/FFmpeg all exist on Windows
 - **macOS port** also possible with minimal effort
-
-This is a major adoption advantage over slim2diretta and squeeze2diretta.
 
 ## Important Notes
 
 - Volume forced to 100% for bit-perfect playback
 - No automated tests — manual testing with LMS + UPnP renderer + DAC
 - Primary target: Linux (cross-platform as stretch goal)
+- Version is tracked in `src/main.cpp` (`SLIM2UPNP_VERSION`) and `CMakeLists.txt`
