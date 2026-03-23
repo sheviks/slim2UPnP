@@ -22,37 +22,38 @@
 
 # ── UPnP Renderer (required) ──────────────────────────────────────────────
 # Name of your UPnP renderer (substring match, case-insensitive).
-# Example: Diretta Renderer
-RENDERER=
+# Use quotes if the name contains spaces.
+# Example: RENDERER="Diretta Renderer"
+RENDERER=""
 
 # Or use the direct URL instead of the name (skip network discovery):
-# Example: http://192.168.1.104:4005/description.xml
-RENDERER_URL=
+# Example: RENDERER_URL="http://192.168.1.104:4005/description.xml"
+RENDERER_URL=""
 
 # ── LMS Server ────────────────────────────────────────────────────────────
 # IP address of your Logitech Media Server.
 # Leave empty for auto-discovery (works on most networks).
-LMS_SERVER=
+LMS_SERVER=""
 
 # ── Player Name ───────────────────────────────────────────────────────────
 # Name shown in LMS interface. Leave empty for default "slim2UPnP".
-PLAYER_NAME=
+PLAYER_NAME=""
 
 # ── Audio Options ─────────────────────────────────────────────────────────
 # Set to "yes" to disable DSD and force PCM output
-NO_DSD=
+NO_DSD=""
 
 # Decoder backend: native (default) or ffmpeg
-DECODER=
+DECODER=""
 
 # ── Network Options ───────────────────────────────────────────────────────
 # Force a specific network interface (e.g., eth0, enp3s0)
-INTERFACE=
+INTERFACE=""
 
 # Force HTTP server port (leave empty for auto)
-HTTP_PORT=
+HTTP_PORT=""
 
 # ── Logging ───────────────────────────────────────────────────────────────
 # Set to "yes" for verbose debug output
 # Check logs:  sudo journalctl -u slim2upnp -f
-VERBOSE=
+VERBOSE=""
