@@ -84,7 +84,8 @@ bool UPnPController::discoverRenderer(const std::string& rendererMatch,
     m_discoveryFound = false;
 
     while (!m_discoveryFound) {
-        if (stopSignal && stopSignal->load()) return false;
+        // stopSignal is g_running (true = keep running, false = stop)
+        if (stopSignal && !stopSignal->load()) return false;
 
         // Clear previous results
         {
@@ -101,13 +102,13 @@ bool UPnPController::discoverRenderer(const std::string& rendererMatch,
         {
             std::unique_lock<std::mutex> lock(m_discoveryMutex);
             m_discoveryCv.wait_for(lock, std::chrono::seconds(6), [this, stopSignal] {
-                return m_discoveryFound || (stopSignal && stopSignal->load());
+                return m_discoveryFound || (stopSignal && !stopSignal->load());
             });
         }
 
         if (m_discoveryFound) break;
 
-        if (stopSignal && stopSignal->load()) return false;
+        if (stopSignal && !stopSignal->load()) return false;
 
         LOG_DEBUG("[UPnP] No matching renderer found, retrying...");
         std::this_thread::sleep_for(std::chrono::seconds(2));
