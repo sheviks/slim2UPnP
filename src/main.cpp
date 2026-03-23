@@ -44,6 +44,15 @@ std::atomic<bool> g_running{true};
 SlimprotoClient* g_slimproto = nullptr;
 
 void signalHandler(int signal) {
+    static int signalCount = 0;
+    signalCount++;
+
+    if (signalCount >= 3) {
+        // Force exit after 3 signals (stuck process)
+        std::cerr << "\nForced exit." << std::endl;
+        _exit(1);
+    }
+
     std::cout << "\nSignal " << signal << " received, shutting down..." << std::endl;
     g_running.store(false, std::memory_order_release);
     if (g_slimproto) {
@@ -485,9 +494,21 @@ int main(int argc, char* argv[]) {
                 // === SEEK/RESTART: thread stopping but not done yet ===
                 if (!audioThreadDone.load(std::memory_order_acquire) &&
                     !audioTestRunning.load(std::memory_order_acquire)) {
-                    LOG_INFO("[Seek] Waiting for audio thread to finish...");
+                    LOG_DEBUG("[Seek] Waiting for audio thread to finish...");
                     if (audioTestThread.joinable()) {
-                        audioTestThread.join();
+                        // Wait with timeout to avoid blocking the slimproto thread
+                        auto deadline = std::chrono::steady_clock::now()
+                                      + std::chrono::milliseconds(500);
+                        while (!audioThreadDone.load(std::memory_order_acquire) &&
+                               std::chrono::steady_clock::now() < deadline) {
+                            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                        }
+                        if (audioThreadDone.load(std::memory_order_acquire)) {
+                            audioTestThread.join();
+                        } else {
+                            LOG_WARN("[Seek] Audio thread still running, detaching");
+                            audioTestThread.detach();
+                        }
                     }
                     audioThreadDone.store(true, std::memory_order_release);
                 }
