@@ -43,13 +43,12 @@ jobs:
               # Install build tools and static libraries
               apk add --no-cache \
                 build-base cmake pkgconf linux-headers \
-                flac-dev flac-static \
-                libupnp-dev libupnp-static \
+                flac-dev \
+                libupnp-dev \
                 mpg123-dev \
                 libvorbis-dev libogg-dev \
                 ffmpeg-dev
 
-              # Some static libs may need to be found manually
               # Build with static linking
               CFLAGS="${{ matrix.cflags }}" \
               CXXFLAGS="${{ matrix.cflags }}" \
@@ -105,8 +104,8 @@ jobs:
             alpine:3.21 sh -c '
               apk add --no-cache \
                 build-base cmake pkgconf linux-headers \
-                flac-dev flac-static \
-                libupnp-dev libupnp-static \
+                flac-dev \
+                libupnp-dev \
                 mpg123-dev \
                 libvorbis-dev libogg-dev \
                 ffmpeg-dev
