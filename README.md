@@ -155,9 +155,9 @@ cmake -B build -DTARGET_MARCH=v3       # AVX2 (better performance on modern CPUs
 cmake -B build -DTARGET_MARCH=v4       # AVX-512
 ```
 
-## Installation
+## Installation & Configuration
 
-### Quick install (no compilation needed)
+### Step 1 — Install
 
 ```bash
 git clone https://github.com/cometdom/slim2UPnP.git
@@ -167,71 +167,49 @@ sudo ./install.sh
 
 That's it. The installer automatically:
 1. Detects your CPU architecture (x86_64, ARM64)
-2. Downloads the right precompiled static binary from GitHub Releases
+2. Downloads the right precompiled binary from GitHub Releases
 3. Verifies the SHA256 checksum
 4. Detects your init system (systemd or OpenRC)
-5. Installs the binary and sets up the service
+5. Installs the binary, the service, and the Web Configuration UI
 
-Other install modes:
-```bash
-sudo ./install.sh --build        # Build from source instead of downloading
-sudo ./install.sh /path/to/bin   # Install a specific binary
-sudo ./install.sh --uninstall    # Remove everything
+### Step 2 — Configure via the Web UI
+
+Open your browser and go to:
+
+```
+http://<your-machine-ip>:8082
 ```
 
-### systemd (Debian, Ubuntu, Fedora, Arch, AudioLinux)
+From the Web UI you can:
+- **Select your UPnP renderer** (enter its name, e.g. "Diretta Renderer")
+- **Set the LMS server** IP address (or leave empty for auto-discovery)
+- **Choose a player name** (shown in the LMS interface)
+- **Toggle audio options** (DSD, decoder backend)
+- **Save & Restart** the service with one click
 
+No command line, no config file editing needed.
+
+> **Tip:** To find the name of your renderer, check the LMS web interface or run `slim2upnp --list-renderers` from a terminal.
+
+### Step 3 — Start playing
+
+Once configured, select **slim2UPnP** as the player in LMS and press play.
+
+The service starts automatically at boot. You can manage it from the Web UI or with these commands:
+
+**systemd** (Debian, Ubuntu, Fedora, Arch, AudioLinux):
 ```bash
-sudo ./install.sh
-
-# Edit configuration (set renderer and LMS)
-sudo nano /etc/default/slim2upnp
-
-# Start and enable at boot
-sudo systemctl start slim2upnp
-sudo systemctl enable slim2upnp
-
-# Check status and logs
-sudo systemctl status slim2upnp
-sudo journalctl -u slim2upnp -f
+sudo systemctl status slim2upnp      # check status
+sudo journalctl -u slim2upnp -f      # follow logs
+sudo systemctl restart slim2upnp     # restart
 ```
 
-### OpenRC (Gentoo, GentooPlayer)
-
+**OpenRC** (Gentoo, GentooPlayer):
 ```bash
-sudo ./install.sh
-
-# Edit configuration (set renderer and LMS)
-sudo nano /etc/conf.d/slim2upnp
-
-# Start and enable at boot
-sudo rc-service slim2upnp start
-sudo rc-update add slim2upnp default
-
-# Check status and logs
-sudo rc-service slim2upnp status
-tail -f /var/log/slim2upnp.log
+sudo rc-service slim2upnp status     # check status
+tail -f /var/log/slim2upnp.log       # follow logs
+sudo rc-service slim2upnp restart    # restart
 ```
-
-### Configuration
-
-The config file (`/etc/default/slim2upnp` or `/etc/conf.d/slim2upnp`) contains `SLIM2UPNP_OPTS` with all command-line options. Examples:
-
-```bash
-# Minimal — auto-discover LMS, find renderer by name
-SLIM2UPNP_OPTS="-r \"Diretta Renderer\""
-
-# Explicit LMS + player name
-SLIM2UPNP_OPTS="-r \"Diretta Renderer\" -s 192.168.1.10 -n \"Living Room\""
-
-# Direct URL (skip SSDP, good for cross-subnet)
-SLIM2UPNP_OPTS="--renderer-url http://192.168.1.104:4005/description.xml -s 192.168.1.10"
-
-# Verbose logging for troubleshooting
-SLIM2UPNP_OPTS="-r \"Diretta Renderer\" -s 192.168.1.10 -v"
-```
-
-Run `slim2upnp --list-renderers` to find available renderers on your network.
 
 ### Uninstall
 
@@ -239,25 +217,26 @@ Run `slim2upnp --list-renderers` to find available renderers on your network.
 sudo ./install.sh --uninstall
 ```
 
-This stops the service, removes the binary, WebUI, and service files. Config files are kept (remove manually if desired).
+### Advanced: manual configuration
 
-## Web Configuration UI
+<details>
+<summary>Click to expand (for advanced users only)</summary>
 
-slim2UPnP includes a web-based configuration interface — no need to edit config files manually.
+The config file is located at `/etc/default/slim2upnp` (systemd) or `/etc/conf.d/slim2upnp` (OpenRC). It contains simple variables:
 
-After installation, open your browser at:
-
+```bash
+RENDERER="Diretta Renderer"
+LMS_SERVER="192.168.1.10"
+PLAYER_NAME="Living Room"
 ```
-http://<your-machine-ip>:8082
+
+Other install modes:
+```bash
+sudo ./install.sh --build        # Build from source instead of downloading
+sudo ./install.sh /path/to/bin   # Install a specific binary
 ```
 
-The WebUI lets you:
-- Set the UPnP renderer name or direct URL
-- Configure the LMS server address and player name
-- Toggle DSD, decoder backend, network options
-- Save settings and restart the service with one click
-
-The WebUI is installed automatically by `install.sh` and runs as a separate service (`slim2upnp-webui`). It requires Python 3.
+</details>
 
 ## DSD Support
 
