@@ -14,59 +14,63 @@ permissions:
 
 jobs:
   # ============================================================
-  # x86_64 builds (v2 baseline + v3 AVX2)
+  # x86_64 builds (v2 baseline + v3 AVX2) — Alpine musl static
   # ============================================================
   build-x64:
     runs-on: ubuntu-24.04
     strategy:
+      fail-fast: false
       matrix:
         include:
           - variant: x64-v2
             march: v2
+            cflags: "-march=x86-64-v2"
             desc: "x86_64 baseline (any Intel/AMD 64-bit)"
           - variant: x64-v3
             march: v3
+            cflags: "-march=x86-64-v3 -mavx2 -mfma"
             desc: "x86_64 AVX2 (Haswell 2013+)"
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Build static binary in Alpine container (${{ matrix.variant }})
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential cmake \
-            libflac-dev libupnp-dev \
-            libmpg123-dev libvorbis-dev \
-            libavcodec-dev libavutil-dev \
-            libfdk-aac-dev
+          docker run --rm \
+            -v ${{ github.workspace }}:/src \
+            -w /src \
+            alpine:3.21 sh -c '
+              apk add --no-cache \
+                build-base cmake \
+                flac-dev flac-static \
+                libupnp-dev libupnp-static \
+                mpg123-dev \
+                libvorbis-dev libvorbis-static libogg-dev libogg-static \
+                ffmpeg-dev \
+                linux-headers
 
-      # For static builds we need the static libraries
-      - name: Install static libraries
-        run: |
-          sudo apt-get install -y \
-            libflac-dev libupnp-dev \
-            libmpg123-dev libvorbis-dev libogg-dev \
-            libfdk-aac-dev
+              export CXXFLAGS="${{ matrix.cflags }} -O2"
+              export CFLAGS="${{ matrix.cflags }} -O2"
 
-      - name: Build static binary (${{ matrix.variant }})
-        run: |
-          cmake -B build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DTARGET_MARCH=${{ matrix.march }} \
-            -DSTATIC_BUILD=ON \
-            -DNOLOG=ON
-          cmake --build build -j$(nproc)
+              cmake -B build \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_EXE_LINKER_FLAGS="-static" \
+                -DCMAKE_FIND_LIBRARY_SUFFIXES=".a" \
+                -DSTATIC_BUILD=ON \
+                -DTARGET_MARCH=${{ matrix.march }} \
+                -DNOLOG=ON
+
+              cmake --build build -j$(nproc)
+              strip build/slim2upnp
+            '
 
       - name: Verify binary
         run: |
           file build/slim2upnp
           build/slim2upnp --version
 
-      - name: Rename and strip binary
-        run: |
-          strip build/slim2upnp
-          cp build/slim2upnp slim2upnp-${{ matrix.variant }}
+      - name: Rename binary
+        run: cp build/slim2upnp slim2upnp-${{ matrix.variant }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -75,7 +79,7 @@ jobs:
           path: slim2upnp-${{ matrix.variant }}
 
   # ============================================================
-  # aarch64 build (via QEMU emulation)
+  # aarch64 build — Alpine musl static via QEMU
   # ============================================================
   build-aarch64:
     runs-on: ubuntu-24.04
@@ -88,36 +92,37 @@ jobs:
         with:
           platforms: arm64
 
-      - name: Build in ARM64 container
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build static binary (aarch64)
+      - name: Build static binary in Alpine ARM64 container
         run: |
           docker run --rm --platform linux/arm64 \
             -v ${{ github.workspace }}:/src \
             -w /src \
-            ubuntu:24.04 bash -c '
-              apt-get update && apt-get install -y \
-                build-essential cmake \
-                libflac-dev libupnp-dev \
-                libmpg123-dev libvorbis-dev libogg-dev \
-                libavcodec-dev libavutil-dev \
-                libfdk-aac-dev
+            alpine:3.21 sh -c '
+              apk add --no-cache \
+                build-base cmake \
+                flac-dev flac-static \
+                libupnp-dev libupnp-static \
+                mpg123-dev \
+                libvorbis-dev libvorbis-static libogg-dev libogg-static \
+                ffmpeg-dev \
+                linux-headers
+
               cmake -B build \
                 -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_EXE_LINKER_FLAGS="-static" \
+                -DCMAKE_FIND_LIBRARY_SUFFIXES=".a" \
                 -DSTATIC_BUILD=ON \
                 -DNOLOG=ON
+
               cmake --build build -j$(nproc)
               strip build/slim2upnp
             '
 
       - name: Verify binary
-        run: |
-          file build/slim2upnp
+        run: file build/slim2upnp
 
       - name: Rename binary
-        run: |
-          cp build/slim2upnp slim2upnp-aarch64
+        run: cp build/slim2upnp slim2upnp-aarch64
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -175,10 +180,21 @@ jobs:
             | `slim2upnp-x64-v3` | x86_64 AVX2 | Modern PCs (Haswell 2013+) |
             | `slim2upnp-aarch64` | ARM64 | Raspberry Pi 4/5, ARM servers |
 
-            All binaries are statically linked — no shared library dependencies.
-            Just download, `chmod +x`, and run.
+            All binaries are **statically linked** (musl libc) — zero runtime dependencies.
+            Just download, `chmod +x`, and run on any Linux of the matching architecture.
 
-            ### Quick start
+            ### Quick install
+
+            ```bash
+            git clone https://github.com/${{ github.repository }}.git
+            cd slim2UPnP
+            sudo ./install.sh
+            ```
+
+            The installer auto-detects your architecture, downloads the right binary,
+            and sets up the systemd or OpenRC service.
+
+            ### Manual install
 
             ```bash
             chmod +x slim2upnp-x64-v2
@@ -186,8 +202,6 @@ jobs:
             slim2upnp --list-renderers
             slim2upnp -r "My Renderer" -s <LMS_IP>
             ```
-
-            Or use the installer: `sudo ./install.sh /path/to/slim2upnp-x64-v2`
 
             See [README](https://github.com/${{ github.repository }}/blob/main/README.md) for full documentation.
           files: |

@@ -157,18 +157,27 @@ cmake -B build -DTARGET_MARCH=v4       # AVX-512
 
 ## Installation
 
-### Quick install
+### Quick install (no compilation needed)
 
 ```bash
-# Build then install (detects distro and init system automatically)
-cmake -B build && cmake --build build
+git clone https://github.com/cometdom/slim2UPnP.git
+cd slim2UPnP
 sudo ./install.sh
 ```
 
-The installer detects your distribution and init system, then:
-1. Copies the binary to `/usr/local/bin/`
-2. Installs the appropriate service (systemd or OpenRC)
-3. Creates a config file to edit
+That's it. The installer automatically:
+1. Detects your CPU architecture (x86_64, ARM64)
+2. Downloads the right precompiled static binary from GitHub Releases
+3. Verifies the SHA256 checksum
+4. Detects your init system (systemd or OpenRC)
+5. Installs the binary and sets up the service
+
+Other install modes:
+```bash
+sudo ./install.sh --build        # Build from source instead of downloading
+sudo ./install.sh /path/to/bin   # Install a specific binary
+sudo ./install.sh --uninstall    # Remove everything
+```
 
 ### systemd (Debian, Ubuntu, Fedora, Arch, AudioLinux)
 
