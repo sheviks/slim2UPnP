@@ -207,7 +207,7 @@ download_binary() {
 
     chmod +x "$tmp_dir/$binary_file"
 
-    # Install runtime dependencies BEFORE verifying (dynamic binaries need .so)
+    # Install runtime deps if needed (static binaries skip this)
     install_runtime_deps "$tmp_dir/$binary_file"
 
     # Verify the binary runs
