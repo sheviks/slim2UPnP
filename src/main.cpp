@@ -716,10 +716,9 @@ int main(int argc, char* argv[]) {
                                 }
                             }
 
-                            // === GAPLESS: send STMd when buffer nearly drained ===
+                            // === GAPLESS: send STMd when DSD data fully pushed ===
                             if (httpEof && serverReady && !stmdSent &&
-                                dsdReader->availableBytes() == 0 &&
-                                audioServerPtr->getBufferLevel() < 0.20f) {
+                                dsdReader->availableBytes() == 0) {
                                 stmdSent = true;
                                 gaplessWaitStart = std::chrono::steady_clock::now();
                                 LOG_INFO("[Audio] DSD stream complete: " << totalBytes
@@ -992,11 +991,10 @@ int main(int argc, char* argv[]) {
                             }
                         }
 
-                        // === GAPLESS: send STMd when buffer nearly drained ===
-                        // Delay STMd until ring buffer is nearly empty so LMS
-                        // doesn't advance to next track while renderer still plays
-                        if (httpEof && serverReady && !stmdSent &&
-                            cacheFrames() == 0 && audioServerPtr->getBufferLevel() < 0.20f) {
+                        // === GAPLESS: send STMd when decode cache is fully drained ===
+                        // Wait until all decoded data is pushed to ring buffer,
+                        // but don't wait for ring buffer to empty (renderer needs it)
+                        if (httpEof && serverReady && !stmdSent && cacheFrames() == 0) {
                             stmdSent = true;
                             if (decoder->isFormatReady()) {
                                 auto fmt = decoder->getFormat();
