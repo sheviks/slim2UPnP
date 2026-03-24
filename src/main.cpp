@@ -1419,7 +1419,13 @@ int main(int argc, char* argv[]) {
             slimproto->run();
         });
 
-        firstStreamAfterConnect = true;  // Suppress Play on next strm-s
+        // Only suppress Play on the very first connection (fresh start).
+        // On reconnections, LMS re-sends the current track and we should play it.
+        if (connectionCount == 1) {
+            firstStreamAfterConnect = true;
+        } else {
+            firstStreamAfterConnect = false;
+        }
         if (connectionCount == 1) {
             LOG_INFO("Player registered with LMS");
             std::cout << "(Press Ctrl+C to stop)" << std::endl;
