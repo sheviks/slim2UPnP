@@ -613,8 +613,17 @@ void UPnPController::startMonitoring() {
     if (m_monitorRunning.load()) return;
     m_monitoredSec.store(0);
     m_monitoredMs.store(0);
-    m_gaplessOffsetMs.store(0);
     m_monitorHasData.store(false);
+
+    // Capture renderer's current position as base offset
+    // (renderer may not reset RelTime on new SetAVTransportURI)
+    auto info = queryPosition();
+    uint32_t baseMs = info.valid ? info.relTimeMs : 0;
+    m_gaplessOffsetMs.store(baseMs);
+    if (baseMs > 0) {
+        LOG_DEBUG("[UPnP] Monitor: renderer base offset " << (baseMs / 1000) << "s");
+    }
+
     m_monitorRunning.store(true);
     m_monitorThread = std::thread(&UPnPController::monitorLoop, this);
 }
