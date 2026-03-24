@@ -679,6 +679,7 @@ int main(int argc, char* argv[]) {
                         bool dsdStmlSent = false;
                         auto dsdLastRendererPoll = std::chrono::steady_clock::now();
                         uint32_t dsdRendererOffsetMs = 0;
+                        uint32_t dsdLastRendererTrackSec = 0;
                         AudioHttpServer::AudioFormat audioFmt{};
                         uint32_t detectedChannels = 2;
                         uint32_t dsdBitRate = 0;
@@ -731,17 +732,12 @@ int main(int argc, char* argv[]) {
                                              << " bytes (" << dsdTrackDurationSec << "s)");
                                 }
                                 constexpr uint32_t GAPLESS_LEAD_SEC = 10;
-                                auto posNow = upnpPtr->getPositionInfo();
-                                uint32_t rendererSec = 0;
-                                if (posNow.valid) {
-                                    rendererSec = (posNow.relTimeMs > dsdRendererOffsetMs)
-                                        ? (posNow.relTimeMs - dsdRendererOffsetMs) / 1000 : 0;
-                                }
                                 if (dsdTrackDurationSec <= 15 ||
-                                    (posNow.valid && rendererSec + GAPLESS_LEAD_SEC >= dsdTrackDurationSec)) {
+                                    (dsdLastRendererTrackSec > 0 &&
+                                     dsdLastRendererTrackSec + GAPLESS_LEAD_SEC >= dsdTrackDurationSec)) {
                                     stmdSent = true;
                                     gaplessWaitStart = std::chrono::steady_clock::now();
-                                    LOG_INFO("[Audio] DSD STMd at renderer=" << rendererSec
+                                    LOG_INFO("[Audio] DSD STMd at renderer=" << dsdLastRendererTrackSec
                                              << "s / " << dsdTrackDurationSec << "s");
                                     slimproto->sendStat(StatEvent::STMd);
                                 }
@@ -870,6 +866,7 @@ int main(int argc, char* argv[]) {
                                             uint32_t trackMs = (posInfo.relTimeMs > dsdRendererOffsetMs)
                                                 ? posInfo.relTimeMs - dsdRendererOffsetMs : 0;
                                             uint32_t trackSec = trackMs / 1000;
+                                            dsdLastRendererTrackSec = trackSec;
                                             slimproto->updateElapsed(trackSec, trackMs);
 
                                             if (trackSec >= lastElapsedLog + 10) {
@@ -1000,6 +997,7 @@ int main(int argc, char* argv[]) {
                     bool stmlSent = false;
                     auto lastRendererPoll = std::chrono::steady_clock::now();
                     uint32_t rendererOffsetMs = 0;  // Subtracted from renderer position at gapless transitions
+                    uint32_t lastRendererTrackSec = 0;  // Updated by PHASE 5, used by STMd check
 
                     bool dopDetected = false;
                     bool httpEof = false;
@@ -1032,11 +1030,9 @@ int main(int argc, char* argv[]) {
                         }
 
                         // === GAPLESS: send STMd when renderer approaches end of track ===
-                        // Don't send STMd immediately when decoder finishes —
-                        // LMS ignores it if sent too early. Instead, wait until
-                        // the renderer's position is near the track duration.
+                        // Uses lastRendererTrackSec from PHASE 5 polling (no extra SOAP call).
                         if (httpEof && serverReady && !stmdSent) {
-                            // Compute track duration from decoded samples
+                            // Compute track duration from decoded samples (once)
                             if (trackDurationSec == 0 && decoder->isFormatReady()) {
                                 auto fmt = decoder->getFormat();
                                 uint64_t decoded = decoder->getDecodedSamples();
@@ -1050,16 +1046,11 @@ int main(int argc, char* argv[]) {
                             // Send STMd when renderer is within 10s of the end
                             // (or immediately for very short tracks < 15s)
                             constexpr uint32_t GAPLESS_LEAD_SEC = 10;
-                            auto posNow = upnpPtr->getPositionInfo();
-                            uint32_t rendererSec = 0;
-                            if (posNow.valid) {
-                                rendererSec = (posNow.relTimeMs > rendererOffsetMs)
-                                    ? (posNow.relTimeMs - rendererOffsetMs) / 1000 : 0;
-                            }
                             if (trackDurationSec <= 15 ||
-                                (posNow.valid && rendererSec + GAPLESS_LEAD_SEC >= trackDurationSec)) {
+                                (lastRendererTrackSec > 0 &&
+                                 lastRendererTrackSec + GAPLESS_LEAD_SEC >= trackDurationSec)) {
                                 stmdSent = true;
-                                LOG_INFO("[Audio] STMd at renderer=" << rendererSec
+                                LOG_INFO("[Audio] STMd at renderer=" << lastRendererTrackSec
                                          << "s / " << trackDurationSec << "s");
                                 slimproto->sendStat(StatEvent::STMd);
                             }
@@ -1264,6 +1255,7 @@ int main(int argc, char* argv[]) {
                                         uint32_t trackMs = (posInfo.relTimeMs > rendererOffsetMs)
                                             ? posInfo.relTimeMs - rendererOffsetMs : 0;
                                         uint32_t trackSec = trackMs / 1000;
+                                        lastRendererTrackSec = trackSec;
                                         slimproto->updateElapsed(trackSec, trackMs);
 
                                         if (trackSec >= lastElapsedLog + 10) {
