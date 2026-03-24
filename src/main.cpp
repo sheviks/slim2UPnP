@@ -686,6 +686,7 @@ int main(int argc, char* argv[]) {
 
                         bool httpEof = false;
                         bool stmdSent = false;
+                        uint32_t dsdTrackDurationSec = 0;
                         bool gaplessWaitDone = false;
                         auto gaplessWaitStart = std::chrono::steady_clock::now();
                         constexpr int GAPLESS_WAIT_MS = 2000;
@@ -716,13 +717,34 @@ int main(int argc, char* argv[]) {
                                 }
                             }
 
-                            // === GAPLESS: send STMd when HTTP stream ends ===
+                            // === GAPLESS: send STMd when renderer approaches end of track ===
                             if (httpEof && serverReady && !stmdSent) {
-                                stmdSent = true;
-                                gaplessWaitStart = std::chrono::steady_clock::now();
-                                LOG_INFO("[Audio] DSD stream complete: " << totalBytes
-                                         << " bytes, " << pushedDsdBytes << " DSD bytes pushed");
-                                slimproto->sendStat(StatEvent::STMd);
+                                if (dsdTrackDurationSec == 0 && dsdReader->isFormatReady()) {
+                                    auto dsdFmt = dsdReader->getFormat();
+                                    if (dsdFmt.sampleRate > 0 && dsdFmt.channels > 0) {
+                                        uint64_t bytesPerSec = (dsdFmt.sampleRate / 8) * dsdFmt.channels;
+                                        if (bytesPerSec > 0 && dsdFmt.totalDsdBytes > 0)
+                                            dsdTrackDurationSec = static_cast<uint32_t>(
+                                                dsdFmt.totalDsdBytes / bytesPerSec);
+                                    }
+                                    LOG_INFO("[Audio] DSD stream decoded: " << totalBytes
+                                             << " bytes (" << dsdTrackDurationSec << "s)");
+                                }
+                                constexpr uint32_t GAPLESS_LEAD_SEC = 10;
+                                auto posNow = upnpPtr->getPositionInfo();
+                                uint32_t rendererSec = 0;
+                                if (posNow.valid) {
+                                    rendererSec = (posNow.relTimeMs > dsdRendererOffsetMs)
+                                        ? (posNow.relTimeMs - dsdRendererOffsetMs) / 1000 : 0;
+                                }
+                                if (dsdTrackDurationSec <= 15 ||
+                                    (posNow.valid && rendererSec + GAPLESS_LEAD_SEC >= dsdTrackDurationSec)) {
+                                    stmdSent = true;
+                                    gaplessWaitStart = std::chrono::steady_clock::now();
+                                    LOG_INFO("[Audio] DSD STMd at renderer=" << rendererSec
+                                             << "s / " << dsdTrackDurationSec << "s");
+                                    slimproto->sendStat(StatEvent::STMd);
+                                }
                             }
 
                             // === GAPLESS: wait for next track ===
@@ -982,6 +1004,7 @@ int main(int argc, char* argv[]) {
                     bool dopDetected = false;
                     bool httpEof = false;
                     bool stmdSent = false;
+                    uint32_t trackDurationSec = 0;
 
                     while (audioTestRunning.load(std::memory_order_acquire) &&
                            (!httpEof || cacheFrames() > 0)) {
@@ -1008,21 +1031,38 @@ int main(int argc, char* argv[]) {
                             }
                         }
 
-                        // === GAPLESS: send STMd when HTTP stream ends ===
-                        // Send immediately so LMS can prepare the next track.
-                        // The decode cache/ring buffer still has audio for the renderer.
+                        // === GAPLESS: send STMd when renderer approaches end of track ===
+                        // Don't send STMd immediately when decoder finishes —
+                        // LMS ignores it if sent too early. Instead, wait until
+                        // the renderer's position is near the track duration.
                         if (httpEof && serverReady && !stmdSent) {
-                            stmdSent = true;
-                            if (decoder->isFormatReady()) {
+                            // Compute track duration from decoded samples
+                            if (trackDurationSec == 0 && decoder->isFormatReady()) {
                                 auto fmt = decoder->getFormat();
                                 uint64_t decoded = decoder->getDecodedSamples();
-                                uint32_t elapsedSec = fmt.sampleRate > 0
-                                    ? static_cast<uint32_t>(decoded / fmt.sampleRate) : 0;
-                                LOG_INFO("[Audio] Stream complete: " << totalBytes
+                                if (fmt.sampleRate > 0) {
+                                    trackDurationSec = static_cast<uint32_t>(decoded / fmt.sampleRate);
+                                }
+                                LOG_INFO("[Audio] Stream decoded: " << totalBytes
                                          << " bytes, " << decoded
-                                         << " frames (" << elapsedSec << "s)");
+                                         << " frames (" << trackDurationSec << "s)");
                             }
-                            slimproto->sendStat(StatEvent::STMd);
+                            // Send STMd when renderer is within 10s of the end
+                            // (or immediately for very short tracks < 15s)
+                            constexpr uint32_t GAPLESS_LEAD_SEC = 10;
+                            auto posNow = upnpPtr->getPositionInfo();
+                            uint32_t rendererSec = 0;
+                            if (posNow.valid) {
+                                rendererSec = (posNow.relTimeMs > rendererOffsetMs)
+                                    ? (posNow.relTimeMs - rendererOffsetMs) / 1000 : 0;
+                            }
+                            if (trackDurationSec <= 15 ||
+                                (posNow.valid && rendererSec + GAPLESS_LEAD_SEC >= trackDurationSec)) {
+                                stmdSent = true;
+                                LOG_INFO("[Audio] STMd at renderer=" << rendererSec
+                                         << "s / " << trackDurationSec << "s");
+                                slimproto->sendStat(StatEvent::STMd);
+                            }
                         }
 
                         // ========== PHASE 1b: Drain decoder into cache ==========
@@ -1327,6 +1367,11 @@ int main(int argc, char* argv[]) {
                             curPcmEndian = next->pcmEndian;
                             prevAudioFmt = audioFmt;
                             pcmFirstTrack = false;
+                            // Reset for next track
+                            httpEof = false;
+                            stmdSent = false;
+                            trackDurationSec = 0;
+                            totalBytes = 0;
                             if (decodeCachePos > 0) {
                                 decodeCache.erase(decodeCache.begin(),
                                     decodeCache.begin() + decodeCachePos);
