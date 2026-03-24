@@ -217,9 +217,9 @@ std::vector<UPnPController::RendererInfo> UPnPController::scanRenderers(
 // ============================================================================
 
 int UPnPController::ctrlPointCallback(Upnp_EventType eventType,
-                                       const void* event, void* cookie) {
+                                       void* event, void* cookie) {
     auto* self = static_cast<UPnPController*>(cookie);
-    return self->handleEvent(eventType, event);
+    return self->handleEvent(eventType, static_cast<const void*>(event));
 }
 
 int UPnPController::handleEvent(Upnp_EventType eventType, const void* event) {

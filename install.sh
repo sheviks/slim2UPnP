@@ -219,9 +219,26 @@ download_binary() {
     # Install runtime deps if needed (static binaries skip this)
     install_runtime_deps "$tmp_dir/$binary_file"
 
-    # Verify the binary runs
+    # Verify the binary runs — test beyond just --version to catch SIGILL in libs
     step "Verifying binary..."
+    local verify_ok=false
     if "$tmp_dir/$binary_file" --version >/dev/null 2>&1; then
+        # Also do a quick UPnP init test to catch SIGILL in statically linked libs
+        # --list-renderers initializes libupnp and exits — triggers any illegal instructions
+        if timeout 5 "$tmp_dir/$binary_file" --list-renderers >/dev/null 2>&1; then
+            verify_ok=true
+        else
+            local exit_code=$?
+            # exit code 132 = SIGILL (128 + signal 4)
+            # exit code 124 = timeout (OK — means it ran but took time, no crash)
+            if [ "$exit_code" = "124" ]; then
+                verify_ok=true
+            else
+                warn "Binary crashed during UPnP init (exit code $exit_code)"
+            fi
+        fi
+    fi
+    if [ "$verify_ok" = true ]; then
         info "Binary verified OK"
     else
         # If v3 failed, try falling back to v2 (Illegal Instruction on some CPUs)

@@ -103,8 +103,10 @@ public:
 
 private:
     // --- libupnp callback ---
+    // libupnp >= 1.14.19 changed callback signature: const void* → void*
+    // We use void* to be compatible with both old and new API versions.
     static int ctrlPointCallback(Upnp_EventType eventType,
-                                 const void* event, void* cookie);
+                                 void* event, void* cookie);
     int handleEvent(Upnp_EventType eventType, const void* event);
 
     // --- SOAP helpers ---
