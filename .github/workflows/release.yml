@@ -44,9 +44,19 @@ jobs:
 
               apk add --no-cache \
                 build-base cmake pkgconf linux-headers \
-                libupnp-dev \
                 libogg-dev libogg-static \
                 wget xz
+
+              # ── Build libupnp from source (static, controlled flags) ──
+              wget -q https://github.com/pupnp/pupnp/releases/download/release-1.14.20/libupnp-1.14.20.tar.bz2
+              tar xf libupnp-1.14.20.tar.bz2
+              cd libupnp-1.14.20
+              CFLAGS="${{ matrix.cflags }}" ./configure \
+                --enable-static --disable-shared \
+                --disable-samples --disable-debug
+              make -j$(nproc)
+              make install
+              cd /src
 
               # ── Build libFLAC from source (static) ──
               wget -q https://github.com/xiph/flac/releases/download/1.4.3/flac-1.4.3.tar.xz
@@ -120,9 +130,19 @@ jobs:
 
               apk add --no-cache \
                 build-base cmake pkgconf linux-headers \
-                libupnp-dev \
                 libogg-dev libogg-static \
-                wget xz
+                wget xz bzip2
+
+              # ── Build libupnp from source (static, controlled flags) ──
+              wget -q https://github.com/pupnp/pupnp/releases/download/release-1.14.20/libupnp-1.14.20.tar.bz2
+              tar xf libupnp-1.14.20.tar.bz2
+              cd libupnp-1.14.20
+              ./configure \
+                --enable-static --disable-shared \
+                --disable-samples --disable-debug
+              make -j$(nproc)
+              make install
+              cd /src
 
               # ── Build libFLAC from source (static) ──
               wget -q https://github.com/xiph/flac/releases/download/1.4.3/flac-1.4.3.tar.xz
