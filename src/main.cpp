@@ -544,8 +544,7 @@ int main(int argc, char* argv[]) {
 
                 // === COLD START PATH ===
 
-                // Stop UPnP renderer and monitoring
-                upnpPtr->stopMonitoring();
+                // Stop UPnP renderer if playing
                 upnpPtr->stop();
 
                 // Join any previous audio thread
@@ -755,7 +754,6 @@ int main(int argc, char* argv[]) {
                                     audioFmt.dsdRate == prevDsdFmt.dsdRate &&
                                     audioFmt.channels == prevDsdFmt.channels) {
                                     LOG_INFO("[Gapless] DSD same format, continuing stream");
-                                    upnpPtr->notifyTrackBoundary();
                                     serverReady = true;
                                     slimproto->sendStat(StatEvent::STMl);
                                     continue;
@@ -795,7 +793,6 @@ int main(int argc, char* argv[]) {
                                         // Only send Play+STMl if this stream is still current
                                         if (streamGeneration.load() == thisGeneration) {
                                             upnpPtr->play();
-                                            upnpPtr->startMonitoring();
                                             slimproto->sendStat(StatEvent::STMl);
                                         }
                                     }).detach();
@@ -817,20 +814,16 @@ int main(int argc, char* argv[]) {
                             }
 
                             // === PHASE 5: Update elapsed ===
-                            if (serverReady && upnpPtr->isMonitoringActive()) {
-                                uint32_t elapsedSec = upnpPtr->getMonitoredElapsedSec();
-                                uint32_t elapsedMs = upnpPtr->getMonitoredElapsedMs();
+                            if (serverReady && byteRateTotal > 0) {
+                                uint64_t totalMs = (pushedDsdBytes * 1000) / byteRateTotal;
+                                uint32_t elapsedSec = static_cast<uint32_t>(totalMs / 1000);
+                                uint32_t elapsedMs = static_cast<uint32_t>(totalMs);
                                 slimproto->updateElapsed(elapsedSec, elapsedMs);
 
                                 if (elapsedSec >= lastElapsedLog + 10) {
                                     lastElapsedLog = elapsedSec;
-                                    LOG_DEBUG("[Audio] DSD elapsed: " << elapsedSec << "s (renderer)");
+                                    LOG_DEBUG("[Audio] DSD elapsed: " << elapsedSec << "s");
                                 }
-                            } else if (serverReady && byteRateTotal > 0) {
-                                uint64_t totalMs = (pushedDsdBytes * 1000) / byteRateTotal;
-                                slimproto->updateElapsed(
-                                    static_cast<uint32_t>(totalMs / 1000),
-                                    static_cast<uint32_t>(totalMs));
                             }
 
                             // === Anti-busy-loop ===
@@ -1017,7 +1010,6 @@ int main(int argc, char* argv[]) {
                                 if (sameFormat) {
                                     LOG_INFO("[Gapless] PCM same format, continuing stream"
                                         " (cache: " << cacheFrames() << " frames)");
-                                    upnpPtr->notifyTrackBoundary();
                                     slimproto->sendStat(StatEvent::STMl);
                                 } else {
                                     // Format change — drain old cache, then reopen
@@ -1070,7 +1062,6 @@ int main(int argc, char* argv[]) {
                                 audioFmt.bitDepth == prevAudioFmt.bitDepth &&
                                 audioFmt.channels == prevAudioFmt.channels) {
                                 LOG_INFO("[Gapless] PCM same format, continuing stream");
-                                upnpPtr->notifyTrackBoundary();
                                 serverReady = true;
                                 slimproto->sendStat(StatEvent::STMl);
                                 continue;
@@ -1134,7 +1125,6 @@ int main(int argc, char* argv[]) {
                                     // Only send Play+STMl if this stream is still current
                                     if (streamGeneration.load() == thisGeneration) {
                                         upnpPtr->play();
-                                        upnpPtr->startMonitoring();
                                         slimproto->sendStat(StatEvent::STMl);
                                     }
                                 }).detach();
@@ -1161,25 +1151,19 @@ int main(int argc, char* argv[]) {
                         }
 
                         // ========== PHASE 5: Update elapsed ==========
-                        if (serverReady && upnpPtr->isMonitoringActive()) {
-                            // Use renderer's actual position (from monitoring thread)
-                            uint32_t elapsedSec = upnpPtr->getMonitoredElapsedSec();
-                            uint32_t elapsedMs = upnpPtr->getMonitoredElapsedMs();
-                            slimproto->updateElapsed(elapsedSec, elapsedMs);
-
-                            if (elapsedSec >= lastElapsedLog + 10) {
-                                lastElapsedLog = elapsedSec;
-                                LOG_DEBUG("[Audio] Elapsed: " << elapsedSec << "s (renderer)"
-                                          << " cache=" << cacheFrames() << "f");
-                            }
-                        } else if (serverReady && decoder->isFormatReady()) {
-                            // Fallback: pushed frames (monitoring not yet active)
+                        if (serverReady && decoder->isFormatReady()) {
                             auto fmt = decoder->getFormat();
                             if (fmt.sampleRate > 0) {
                                 uint64_t totalMs = pushedFrames * 1000 / fmt.sampleRate;
-                                slimproto->updateElapsed(
-                                    static_cast<uint32_t>(totalMs / 1000),
-                                    static_cast<uint32_t>(totalMs));
+                                uint32_t elapsedSec = static_cast<uint32_t>(totalMs / 1000);
+                                uint32_t elapsedMs = static_cast<uint32_t>(totalMs);
+                                slimproto->updateElapsed(elapsedSec, elapsedMs);
+
+                                if (elapsedSec >= lastElapsedLog + 10) {
+                                    lastElapsedLog = elapsedSec;
+                                    LOG_DEBUG("[Audio] Elapsed: " << elapsedSec << "s"
+                                              << " cache=" << cacheFrames() << "f");
+                                }
                             }
                         }
 
@@ -1233,11 +1217,7 @@ int main(int argc, char* argv[]) {
                             decodeCachePos += samples;
                             pushedFrames += push;
 
-                            if (upnpPtr->isMonitoringActive()) {
-                                slimproto->updateElapsed(
-                                    upnpPtr->getMonitoredElapsedSec(),
-                                    upnpPtr->getMonitoredElapsedMs());
-                            } else if (decoder->isFormatReady()) {
+                            if (decoder->isFormatReady()) {
                                 auto fmt = decoder->getFormat();
                                 if (fmt.sampleRate > 0) {
                                     uint64_t totalMs = pushedFrames * 1000 / fmt.sampleRate;
@@ -1320,7 +1300,6 @@ int main(int argc, char* argv[]) {
                     bool wasActive = !audioThreadDone.load(std::memory_order_acquire);
                     audioTestRunning.store(false);
                     httpStream->disconnect();
-                    upnpPtr->stopMonitoring();
                     upnpPtr->stop();
                     audioServerPtr->reset();
                     // Only send STMf if something was actually playing
@@ -1354,7 +1333,6 @@ int main(int argc, char* argv[]) {
                     bool wasActive = !audioThreadDone.load(std::memory_order_acquire);
                     audioTestRunning.store(false);
                     httpStream->disconnect();
-                    upnpPtr->stopMonitoring();
                     upnpPtr->stop();
                     audioServerPtr->reset();
                     if (wasActive) {
@@ -1390,7 +1368,6 @@ int main(int argc, char* argv[]) {
                 LOG_WARN("Audio thread did not stop in time, detached");
             }
         }
-        upnpPtr->stopMonitoring();
         upnpPtr->stop();
     };
 
