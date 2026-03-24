@@ -459,7 +459,6 @@ int main(int argc, char* argv[]) {
     std::atomic<bool> audioTestRunning{false};
     std::atomic<bool> audioThreadDone{true};
     std::atomic<uint32_t> streamGeneration{0};  // Incremented on each strm-s
-    bool hasEverPlayed = false;  // True after first successful playback start
 
     // Gapless: pending next track
     struct PendingTrack {
@@ -483,7 +482,6 @@ int main(int argc, char* argv[]) {
         switch (cmd.command) {
             case STRM_START: {
                 LOG_INFO("Stream start requested (format=" << cmd.format << ")");
-                hasEverPlayed = true;
 
                 std::string streamIp = slimproto->getServerIp();
                 if (cmd.serverIp != 0) {
@@ -1306,12 +1304,9 @@ int main(int argc, char* argv[]) {
                         upnpPtr->stop();
                         audioServerPtr->reset();
                     }
-                    // Only send STMf if we've actually played something before.
-                    // Sending STMf on the initial registration strm-q causes LMS
-                    // to close the connection, creating a reconnect loop.
-                    if (hasEverPlayed) {
-                        slimproto->sendStat(StatEvent::STMf);
-                    }
+                    // strm-q = stop. Do NOT send STMf here.
+                    // STMf is only for strm-f (flush). Sending STMf on strm-q
+                    // causes LMS to disconnect or auto-resume on reconnection.
                 }
                 break;
 
@@ -1335,14 +1330,12 @@ int main(int argc, char* argv[]) {
                     hasPendingTrack.store(false, std::memory_order_release);
                 }
                 {
-                    bool wasActive = !audioThreadDone.load(std::memory_order_acquire);
                     audioTestRunning.store(false);
                     httpStream->disconnect();
                     upnpPtr->stop();
                     audioServerPtr->reset();
-                    if (wasActive) {
-                        slimproto->sendStat(StatEvent::STMf);
-                    }
+                    // strm-f = flush → always confirm with STMf
+                    slimproto->sendStat(StatEvent::STMf);
                 }
                 break;
 
