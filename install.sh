@@ -394,6 +394,15 @@ install_binary() {
 
     install_runtime_deps "$src"
 
+    # Stop running services before overwriting the binary
+    if [ "$INIT_SYSTEM" = "systemd" ]; then
+        systemctl stop slim2upnp 2>/dev/null || true
+        systemctl stop slim2upnp-webui 2>/dev/null || true
+    elif [ "$INIT_SYSTEM" = "openrc" ]; then
+        rc-service slim2upnp stop 2>/dev/null || true
+        rc-service slim2upnp-webui stop 2>/dev/null || true
+    fi
+
     info "Installing $BINARY_NAME to $INSTALL_DIR/"
     install -m 755 "$src" "$INSTALL_DIR/$BINARY_NAME"
 
