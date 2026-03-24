@@ -673,6 +673,8 @@ int main(int argc, char* argv[]) {
                         constexpr unsigned int PREBUFFER_MS = 500;
                         uint64_t pushedDsdBytes = 0;
                         bool serverReady = false;
+                        std::atomic<uint64_t> playStartDsdBytes{0};
+                        std::atomic<bool> dsdPlayStarted{false};
                         AudioHttpServer::AudioFormat audioFmt{};
                         uint32_t detectedChannels = 2;
                         uint32_t dsdBitRate = 0;
@@ -788,18 +790,20 @@ int main(int argc, char* argv[]) {
                                     // Prebuffer done — allow renderer to connect
                                     audioServerPtr->setReadyToServe();
 
-                                    pushedDsdBytes = 0;
                                     slimproto->updateElapsed(0, 0);
 
                                     // Start UPnP playback in background thread
                                     serverReady = true;
                                     std::thread([upnpPtr, audioServerPtr, &slimproto,
                                                  &streamGeneration, thisGeneration,
-                                                 suppressPlay]() {
+                                                 suppressPlay, &pushedDsdBytes,
+                                                 &playStartDsdBytes, &dsdPlayStarted]() {
                                         if (suppressPlay) return;  // Startup dance: don't touch renderer
                                         upnpPtr->setAVTransportURI(audioServerPtr->getStreamURL());
                                         if (streamGeneration.load() == thisGeneration) {
                                             upnpPtr->play();
+                                            playStartDsdBytes.store(pushedDsdBytes, std::memory_order_release);
+                                            dsdPlayStarted.store(true, std::memory_order_release);
                                             slimproto->sendStat(StatEvent::STMl);
                                         }
                                     }).detach();
@@ -821,8 +825,10 @@ int main(int argc, char* argv[]) {
                             }
 
                             // === PHASE 5: Update elapsed ===
-                            if (serverReady && byteRateTotal > 0) {
-                                uint64_t totalMs = (pushedDsdBytes * 1000) / byteRateTotal;
+                            if (serverReady && byteRateTotal > 0 && dsdPlayStarted.load(std::memory_order_acquire)) {
+                                uint64_t startB = playStartDsdBytes.load(std::memory_order_acquire);
+                                uint64_t playedBytes = (pushedDsdBytes > startB) ? (pushedDsdBytes - startB) : 0;
+                                uint64_t totalMs = (playedBytes * 1000) / byteRateTotal;
                                 uint32_t elapsedSec = static_cast<uint32_t>(totalMs / 1000);
                                 uint32_t elapsedMs = static_cast<uint32_t>(totalMs);
                                 slimproto->updateElapsed(elapsedSec, elapsedMs);
@@ -946,6 +952,8 @@ int main(int argc, char* argv[]) {
                     constexpr unsigned int PREBUFFER_MS_HIGHRATE = 3000;
                     unsigned int prebufferMs = PREBUFFER_MS_NORMAL;
                     uint64_t pushedFrames = 0;
+                    std::atomic<uint64_t> playStartFrames{0};
+                    std::atomic<bool> playStarted{false};
 
                     bool dopDetected = false;
                     bool httpEof = false;
@@ -1119,8 +1127,7 @@ int main(int argc, char* argv[]) {
                                 // Prebuffer done — now allow renderer to connect and read
                                 audioServerPtr->setReadyToServe();
 
-                                // Reset elapsed: prebuffered frames are not playback time
-                                pushedFrames = 0;
+                                // Don't reset elapsed yet — will be reset when Play is actually sent
                                 slimproto->updateElapsed(0, 0);
 
                                 // Start UPnP playback in background thread
@@ -1128,11 +1135,16 @@ int main(int argc, char* argv[]) {
                                 serverReady = true;
                                 std::thread([upnpPtr, audioServerPtr, &slimproto,
                                              &streamGeneration, thisGeneration,
-                                             suppressPlay]() {
+                                             suppressPlay, &pushedFrames,
+                                             &playStartFrames, &playStarted]() {
                                     if (suppressPlay) return;  // Startup dance: don't touch renderer
                                     upnpPtr->setAVTransportURI(audioServerPtr->getStreamURL());
                                     if (streamGeneration.load() == thisGeneration) {
                                         upnpPtr->play();
+                                        // Mark the frame count at the moment Play is sent
+                                        // Elapsed time will be relative to this point
+                                        playStartFrames.store(pushedFrames, std::memory_order_release);
+                                        playStarted.store(true, std::memory_order_release);
                                         slimproto->sendStat(StatEvent::STMl);
                                     }
                                 }).detach();
@@ -1161,8 +1173,10 @@ int main(int argc, char* argv[]) {
                         // ========== PHASE 5: Update elapsed ==========
                         if (serverReady && decoder->isFormatReady()) {
                             auto fmt = decoder->getFormat();
-                            if (fmt.sampleRate > 0) {
-                                uint64_t totalMs = pushedFrames * 1000 / fmt.sampleRate;
+                            if (fmt.sampleRate > 0 && playStarted.load(std::memory_order_acquire)) {
+                                uint64_t startF = playStartFrames.load(std::memory_order_acquire);
+                                uint64_t playedFrames = (pushedFrames > startF) ? (pushedFrames - startF) : 0;
+                                uint64_t totalMs = playedFrames * 1000 / fmt.sampleRate;
                                 uint32_t elapsedSec = static_cast<uint32_t>(totalMs / 1000);
                                 uint32_t elapsedMs = static_cast<uint32_t>(totalMs);
                                 slimproto->updateElapsed(elapsedSec, elapsedMs);
