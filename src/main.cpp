@@ -796,11 +796,10 @@ int main(int argc, char* argv[]) {
                                     std::thread([upnpPtr, audioServerPtr, &slimproto,
                                                  &streamGeneration, thisGeneration,
                                                  suppressPlay]() {
+                                        if (suppressPlay) return;  // Startup dance: don't touch renderer
                                         upnpPtr->setAVTransportURI(audioServerPtr->getStreamURL());
                                         if (streamGeneration.load() == thisGeneration) {
-                                            if (!suppressPlay) {
-                                                upnpPtr->play();
-                                            }
+                                            upnpPtr->play();
                                             slimproto->sendStat(StatEvent::STMl);
                                         }
                                     }).detach();
@@ -1130,11 +1129,10 @@ int main(int argc, char* argv[]) {
                                 std::thread([upnpPtr, audioServerPtr, &slimproto,
                                              &streamGeneration, thisGeneration,
                                              suppressPlay]() {
+                                    if (suppressPlay) return;  // Startup dance: don't touch renderer
                                     upnpPtr->setAVTransportURI(audioServerPtr->getStreamURL());
                                     if (streamGeneration.load() == thisGeneration) {
-                                        if (!suppressPlay) {
-                                            upnpPtr->play();
-                                        }
+                                        upnpPtr->play();
                                         slimproto->sendStat(StatEvent::STMl);
                                     }
                                 }).detach();
