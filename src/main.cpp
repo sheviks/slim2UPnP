@@ -543,9 +543,9 @@ int main(int argc, char* argv[]) {
                 }
 
                 // === COLD START PATH ===
-
-                // Stop UPnP renderer if playing
-                upnpPtr->stop();
+                // Note: do NOT send UPnP Stop here — SetAVTransportURI
+                // replaces the current stream without forcing the renderer
+                // to tear down its output connection (avoids ~8s glitch).
 
                 // Join any previous audio thread
                 if (audioTestThread.joinable()) {
