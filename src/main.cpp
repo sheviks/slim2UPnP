@@ -963,9 +963,10 @@ int main(int argc, char* argv[]) {
                     bool dopDetected = false;
                     bool httpEof = false;
                     bool stmdSent = false;
+                    uint64_t totalDecodedBytes = 0;  // Total audio bytes (for STMd timing)
 
                     while (audioTestRunning.load(std::memory_order_acquire) &&
-                           (!httpEof || cacheFrames() > 0)) {
+                           (!httpEof || cacheFrames() > 0 || !stmdSent)) {
 
                         // ========== PHASE 1a: HTTP read ==========
                         bool gotData = false;
@@ -989,19 +990,31 @@ int main(int argc, char* argv[]) {
                             }
                         }
 
-                        // === GAPLESS: send STMd early ===
+                        // === GAPLESS: send STMd when renderer is near end ===
                         if (httpEof && serverReady && !stmdSent) {
-                            stmdSent = true;
-                            if (decoder->isFormatReady()) {
+                            // Calculate total decoded audio bytes (once)
+                            if (totalDecodedBytes == 0 && decoder->isFormatReady()) {
                                 auto fmt = decoder->getFormat();
                                 uint64_t decoded = decoder->getDecodedSamples();
-                                uint32_t elapsedSec = fmt.sampleRate > 0
+                                totalDecodedBytes = decoded * audioFmt.bytesPerFrame();
+                                uint32_t durationSec = fmt.sampleRate > 0
                                     ? static_cast<uint32_t>(decoded / fmt.sampleRate) : 0;
-                                LOG_INFO("[Audio] Stream complete: " << totalBytes
+                                LOG_INFO("[Audio] Stream decoded: " << totalBytes
                                          << " bytes, " << decoded
-                                         << " frames (" << elapsedSec << "s)");
+                                         << " frames (" << durationSec << "s)");
                             }
-                            slimproto->sendStat(StatEvent::STMd);
+                            // Send STMd when renderer has consumed within 3s of the end
+                            constexpr uint64_t STMD_LEAD_BYTES = 3;  // seconds
+                            uint64_t served = audioServerPtr->getBytesServed();
+                            uint64_t leadBytes = audioFmt.bytesPerSecond() * STMD_LEAD_BYTES;
+                            if (totalDecodedBytes > 0 &&
+                                served + leadBytes >= totalDecodedBytes) {
+                                stmdSent = true;
+                                uint64_t servedSec = audioFmt.bytesPerSecond() > 0
+                                    ? served / audioFmt.bytesPerSecond() : 0;
+                                LOG_INFO("[Audio] STMd at served " << servedSec << "s");
+                                slimproto->sendStat(StatEvent::STMd);
+                            }
                         }
 
                         // ========== PHASE 1b: Drain decoder into cache ==========
@@ -1174,13 +1187,14 @@ int main(int argc, char* argv[]) {
                             }
                         }
 
-                        // ========== PHASE 5: Update elapsed ==========
-                        if (serverReady && decoder->isFormatReady()) {
-                            auto fmt = decoder->getFormat();
-                            if (fmt.sampleRate > 0) {
-                                uint64_t totalMs = pushedFrames * 1000 / fmt.sampleRate;
-                                uint32_t elapsedSec = static_cast<uint32_t>(totalMs / 1000);
-                                uint32_t elapsedMs = static_cast<uint32_t>(totalMs);
+                        // ========== PHASE 5: Update elapsed (bytes-served) ==========
+                        if (serverReady) {
+                            uint64_t bps = audioFmt.bytesPerSecond();
+                            if (bps > 0) {
+                                uint64_t served = audioServerPtr->getBytesServed();
+                                uint32_t elapsedSec = static_cast<uint32_t>(served / bps);
+                                uint32_t elapsedMs = static_cast<uint32_t>(
+                                    served * 1000 / bps);
                                 slimproto->updateElapsed(elapsedSec, elapsedMs);
 
                                 if (elapsedSec >= lastElapsedLog + 10) {
@@ -1239,16 +1253,14 @@ int main(int argc, char* argv[]) {
                                 audioServerPtr->writeAudio(convBuf.data(), convBytes);
                             }
                             decodeCachePos += samples;
-                            pushedFrames += push;
 
-                            if (decoder->isFormatReady()) {
-                                auto fmt = decoder->getFormat();
-                                if (fmt.sampleRate > 0) {
-                                    uint64_t totalMs = pushedFrames * 1000 / fmt.sampleRate;
-                                    slimproto->updateElapsed(
-                                        static_cast<uint32_t>(totalMs / 1000),
-                                        static_cast<uint32_t>(totalMs));
-                                }
+                            // Update elapsed from bytes served
+                            uint64_t bps = audioFmt.bytesPerSecond();
+                            if (bps > 0) {
+                                uint64_t served = audioServerPtr->getBytesServed();
+                                slimproto->updateElapsed(
+                                    static_cast<uint32_t>(served / bps),
+                                    static_cast<uint32_t>(served * 1000 / bps));
                             }
                         }
 
