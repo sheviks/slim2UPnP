@@ -435,8 +435,16 @@ void SlimprotoClient::sendStat(const char eventCode[4], uint32_t serverTimestamp
 
     stat.signalStrength = htons(0xFFFF);  // Wired connection
     stat.jiffies = htonl(getJiffies());
-    stat.outputBufSize = htonl(m_outputBufSize.load(std::memory_order_relaxed));
-    stat.outputBufFull = htonl(m_outputBufFull.load(std::memory_order_relaxed));
+
+    // Fake output buffer like squeeze2upnp: report half-full when playing.
+    // LMS uses outputBufFull to adjust progress bar position.
+    // Real output buffer is in the UPnP renderer (unknown to us).
+    constexpr uint32_t FAKE_OUTPUT_BUF_SIZE = 4096 * 1024;  // 4MB
+    uint32_t elapsedMs = m_elapsedMs.load(std::memory_order_relaxed);
+    uint32_t outputFull = (elapsedMs > 0) ? FAKE_OUTPUT_BUF_SIZE / 2 : 0;
+    stat.outputBufSize = htonl(FAKE_OUTPUT_BUF_SIZE);
+    stat.outputBufFull = htonl(outputFull);
+
     stat.elapsedSeconds = htonl(m_elapsedSeconds.load(std::memory_order_relaxed));
     stat.voltage = 0;
     stat.elapsedMs = htonl(m_elapsedMs.load(std::memory_order_relaxed));
