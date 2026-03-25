@@ -1109,6 +1109,8 @@ int main(int argc, char* argv[]) {
                                     totalBytes = 0;
                                     stmdSent = false;
                                     httpEof = false;
+                                    // Skip PHASE 3 SOAP thread — call Play directly
+                                    // (the SOAP thread's generation check would fail)
                                     slimproto->updateStreamBytes(0);
                                     slimproto->updateElapsed(0, 0);
                                 }
@@ -1194,14 +1196,13 @@ int main(int argc, char* argv[]) {
                                 // (SetAVTransportURI blocks for seconds while renderer connects)
                                 serverReady = true;
                                 std::thread([upnpPtr, audioServerPtr, &slimproto,
-                                             &streamGeneration, thisGeneration,
+                                             &audioTestRunning,
                                              &gaplessBytesOffset, &playStarted]() {
                                     upnpPtr->setAVTransportURI(audioServerPtr->getStreamURL());
-                                    // Only send Play+STMl if this stream is still current
-                                    if (streamGeneration.load() == thisGeneration) {
+                                    // Check audioTestRunning (not generation) as format change
+                                    // has already advanced the generation counter
+                                    if (audioTestRunning.load(std::memory_order_acquire)) {
                                         upnpPtr->play();
-                                        // Capture bytes already served as baseline
-                                        // (prebuffer data served before Play)
                                         gaplessBytesOffset = audioServerPtr->getBytesServed();
                                         slimproto->updateElapsed(0, 0);
                                         slimproto->updateStreamBytes(0);
