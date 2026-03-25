@@ -1300,10 +1300,10 @@ int main(int argc, char* argv[]) {
                     bool wasActive = !audioThreadDone.load(std::memory_order_acquire);
                     audioTestRunning.store(false);
                     httpStream->disconnect();
-                    upnpPtr->stop();
+                    // Do NOT send UPnP Stop — SetAVTransportURI on next strm-s
+                    // will replace the stream. Renderer stops naturally when
+                    // HTTP connection closes if no strm-s follows.
                     audioServerPtr->reset();
-                    // Only send STMf if something was actually playing
-                    // (avoids confusing LMS during initial registration strm-q)
                     if (wasActive) {
                         slimproto->sendStat(StatEvent::STMf);
                     }
@@ -1333,7 +1333,7 @@ int main(int argc, char* argv[]) {
                     bool wasActive = !audioThreadDone.load(std::memory_order_acquire);
                     audioTestRunning.store(false);
                     httpStream->disconnect();
-                    upnpPtr->stop();
+                    // Same as STRM_STOP: no UPnP Stop
                     audioServerPtr->reset();
                     if (wasActive) {
                         slimproto->sendStat(StatEvent::STMf);
