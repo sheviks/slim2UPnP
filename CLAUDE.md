@@ -6,7 +6,7 @@ This file provides guidance to Claude Code when working with this repository.
 
 **slim2UPnP** is a Slimproto→UPnP bridge with native DSD support. It replaces squeeze2upnp (by Philippe/Ralphy) for users who want to use LMS with a UPnP renderer (e.g., DirettaRendererUPnP) while having full DSD playback capability.
 
-**Version**: 0.0.1 (initial test release)
+**Version**: 0.0.3-beta
 **License**: MIT (no GPL code copied). Slimproto protocol implemented from public documentation.
 
 ## Architecture
@@ -25,7 +25,9 @@ LMS (network)
 
 **Audio flow** (pull model): decode thread fills ring buffer → UPnP renderer pulls via HTTP GET from AudioHttpServer. This is the inverse of slim2diretta (push to Diretta).
 
-**Threading**: main (init/signals) + slimproto (TCP LMS) + audio (HTTP→decode→ring buffer) + HTTP server (serve to renderer)
+**Gapless architecture** (v0.0.3): Dual AudioHttpServer (slots A/B) with ping-pong. Each track is a separate HTTP stream. Gapless transitions use `SetNextAVTransportURI` — the renderer pre-connects to the next slot's URL while finishing the current track. This is the standard UPnP gapless mechanism.
+
+**Threading**: main (init/signals) + slimproto (TCP LMS) + audio (HTTP→decode→ring buffer) + 2× HTTP server threads (serve to renderer, one per slot)
 
 ## File Structure
 
@@ -126,7 +128,7 @@ Key messages: HELO (registration), STAT (status), strm (stream control), audg (v
 ## UPnP Protocol
 
 ### Implemented UPnP services
-- **AVTransport**: SetAVTransportURI, Play, Stop, Pause, GetPositionInfo, GetTransportInfo
+- **AVTransport**: SetAVTransportURI, SetNextAVTransportURI, Play, Stop, Pause, GetPositionInfo, GetTransportInfo
 - **RenderingControl**: SetVolume (force 100%), GetVolume
 - **ConnectionManager**: GetProtocolInfo (check supported formats)
 
@@ -156,10 +158,20 @@ Key messages: HELO (registration), STAT (status), strm (stream control), audg (v
 - Serve 24-bit WAV for sources ≤24-bit, 32-bit only for true 32-bit sources
 - Some DACs/renderers report 32-bit support but physically limited to 24-bit → white noise
 
-### Gapless
-- STMd sent at HTTP EOF, but decode cache may still have minutes of audio
-- Shared decode cache persists across gapless same-format tracks
+### Gapless (v0.0.3 architecture)
+- **Dual AudioHttpServer** (slots A/B): each track is a separate HTTP stream with its own WAV/DSF header
+- **SetNextAVTransportURI**: sent when cache drains, renderer pre-connects to next slot
+- **signalEndOfStream** on old slot: renderer transitions to next track
+- STMd delayed until `getBytesServed() + 3s >= totalDecodedBytes` (prevents early LMS UI switch)
+- **Bytes-served elapsed**: `(getBytesServed() - baseline) / bytesPerSecond()` for per-track position
 - 2-second gapless wait window before declaring track end
+- Cross-format changes: renderer handles internally via SetNextAVTransportURI
+
+### Gapless — failed approaches (DO NOT re-attempt)
+- **Continuous WAV stream** (v0.0.1-v0.0.2): renderer sees one infinite track, `m_samplesPlayed` cumulates → erratic GetPositionInfo values (835s for a 3:45 track)
+- **GetPositionInfo polling** (reverted): DirettaRendererUPnP returns erratic values; SOAP floods when called inline in decode loop
+- **Delayed STMd based on pushedFrames** (reverted): loop exit condition deadlocked because elapsed never reached threshold
+- **bytesReceived in STAT** (disabled): we download 10x faster than real-time → LMS position confusion
 
 ### Startup
 - Retry renderer/server discovery indefinitely (important for systems without systemd restart like GentooPlayer/OpenRC)

@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.0.3-beta] - 2026-03-25
+
+### Added
+- **Dual AudioHttpServer architecture** (ping-pong slots A/B) — each track is a separate HTTP stream
+- **SetNextAVTransportURI** for proper UPnP gapless transitions — universal, works with any UPnP renderer
+- UPnP renderer scan in WebUI ("Scan for renderers" button)
+- Ko-fi donation link in README
+
+### Changed
+- Gapless mechanism: replaced continuous WAV stream with per-track streams via SetNextAVTransportURI
+- Elapsed tracking: uses bytes-served from AudioHttpServer (per-track, starts at 0)
+- STMd timing: delayed until renderer has consumed within 3s of track end
+- Ring buffer doubled (PCM: 4s, DSD: 2s) for better buffering margin
+- Prebuffer increased to 3s for all sample rates (eliminates startup glitch)
+- bytesReceived not reported to LMS (was causing position confusion)
+- Model/ModelName changed from slim2diretta to slim2upnp in HELO
+
+### Fixed
+- **Cross-format gapless**: tracks no longer truncated 10s before end
+- **Same-format gapless**: Pink Floyd-style seamless transitions work perfectly
+- **Startup glitch (~8s silence)**: eliminated by 3s prebuffer
+- **Progress bar sync**: bytes-served approach with baseline subtraction
+- Static binary SIGILL: libupnp built from source in CI (Alpine musl)
+- libupnp API compatibility: supports both old and new callback signatures
+- install.sh: robust AVX2 detection with x64-v2 fallback
+- WebUI: renderer scan via --list-renderers integration
+
+### Known Limitations
+- LMS UI advances to next track ~10s early (prebuffer latency)
+- DSD path not yet adapted to dual-server architecture
+- First play glitch requires DirettaRendererUPnP v2.1.5 warmup fix
+
 ## [0.0.2] - 2026-03-23
 
 ### Added
