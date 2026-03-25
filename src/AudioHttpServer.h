@@ -107,6 +107,10 @@ public:
     /// True if a UPnP renderer is currently connected and reading.
     bool isClientConnected() const { return m_clientConnected.load(); }
 
+    /// Total audio bytes served to renderer since last reset (excludes headers).
+    /// Divide by bytesPerSecond() to get elapsed playback time.
+    uint64_t getBytesServed() const { return m_bytesServed.load(std::memory_order_relaxed); }
+
     // --- WAV header ---
 
     /// Build a WAV/RIFF header for streaming (data size = 0x7FFFFFFF).
@@ -154,6 +158,7 @@ private:
     std::atomic<bool> m_running{false};
     std::atomic<bool> m_endOfStream{false};
     std::atomic<bool> m_clientConnected{false};
+    std::atomic<uint64_t> m_bytesServed{0};  // Audio bytes sent to renderer
     int m_clientSocket = -1;            // Current client (for abort on reset)
     std::mutex m_clientMutex;
 };

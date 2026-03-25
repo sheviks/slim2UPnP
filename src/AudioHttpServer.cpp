@@ -258,6 +258,7 @@ void AudioHttpServer::reset() {
         m_readPos = 0;
     }
 
+    m_bytesServed.store(0, std::memory_order_relaxed);
     m_endOfStream.store(false);
 }
 
@@ -533,6 +534,7 @@ void AudioHttpServer::handleClient(int clientSocket) {
                     return;  // Client disconnected
                 }
                 sent += static_cast<size_t>(n);
+                m_bytesServed.fetch_add(static_cast<uint64_t>(n), std::memory_order_relaxed);
             }
         } else if (m_endOfStream.load()) {
             // No more data and end of stream — done

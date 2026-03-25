@@ -617,6 +617,7 @@ int main(int argc, char* argv[]) {
                         uint64_t totalBytes = 0;
                         bool formatLogged = false;
                         uint64_t lastElapsedLog = 0;
+                        uint64_t gaplessBytesOffset = 0;
 
                         constexpr size_t DSD_PLANAR_BUF = 16384;
                         uint8_t planarBuf[DSD_PLANAR_BUF];
@@ -753,8 +754,12 @@ int main(int argc, char* argv[]) {
                                 if (!dsdFirstTrack &&
                                     audioFmt.dsdRate == prevDsdFmt.dsdRate &&
                                     audioFmt.channels == prevDsdFmt.channels) {
-                                    LOG_INFO("[Gapless] DSD same format, continuing stream");
+                                    gaplessBytesOffset = audioServerPtr->getBytesServed();
+                                    LOG_INFO("[Gapless] DSD same format, continuing stream"
+                                        " (bytesOffset: " << gaplessBytesOffset << ")");
                                     serverReady = true;
+                                    slimproto->updateElapsed(0, 0);
+                                    lastElapsedLog = 0;
                                     slimproto->sendStat(StatEvent::STMl);
                                     continue;
                                 }
@@ -813,9 +818,14 @@ int main(int argc, char* argv[]) {
                                 }
                             }
 
-                            // === PHASE 5: Update elapsed ===
+                            // === PHASE 5: Update elapsed (based on bytes served to renderer) ===
                             if (serverReady && byteRateTotal > 0) {
-                                uint64_t totalMs = (pushedDsdBytes * 1000) / byteRateTotal;
+                                uint64_t served = audioServerPtr->getBytesServed();
+                                if (served > gaplessBytesOffset)
+                                    served -= gaplessBytesOffset;
+                                else
+                                    served = 0;
+                                uint64_t totalMs = (served * 1000) / byteRateTotal;
                                 uint32_t elapsedSec = static_cast<uint32_t>(totalMs / 1000);
                                 uint32_t elapsedMs = static_cast<uint32_t>(totalMs);
                                 slimproto->updateElapsed(elapsedSec, elapsedMs);
@@ -939,6 +949,7 @@ int main(int argc, char* argv[]) {
                     constexpr unsigned int PREBUFFER_MS_HIGHRATE = 3000;
                     unsigned int prebufferMs = PREBUFFER_MS_NORMAL;
                     uint64_t pushedFrames = 0;
+                    uint64_t gaplessBytesOffset = 0;  // bytesServed at gapless transition
 
                     bool dopDetected = false;
                     bool httpEof = false;
@@ -1008,8 +1019,12 @@ int main(int argc, char* argv[]) {
                                     (fmt.sampleRate == audioFmt.sampleRate &&
                                      fmt.channels == audioFmt.channels);
                                 if (sameFormat) {
+                                    gaplessBytesOffset = audioServerPtr->getBytesServed();
                                     LOG_INFO("[Gapless] PCM same format, continuing stream"
-                                        " (cache: " << cacheFrames() << " frames)");
+                                        " (cache: " << cacheFrames() << " frames,"
+                                        " bytesOffset: " << gaplessBytesOffset << ")");
+                                    slimproto->updateElapsed(0, 0);
+                                    lastElapsedLog = 0;
                                     slimproto->sendStat(StatEvent::STMl);
                                 } else {
                                     // Format change — drain old cache, then reopen
@@ -1150,18 +1165,24 @@ int main(int argc, char* argv[]) {
                             }
                         }
 
-                        // ========== PHASE 5: Update elapsed ==========
-                        if (serverReady && decoder->isFormatReady()) {
-                            auto fmt = decoder->getFormat();
-                            if (fmt.sampleRate > 0) {
-                                uint64_t totalMs = pushedFrames * 1000 / fmt.sampleRate;
+                        // ========== PHASE 5: Update elapsed (based on bytes served to renderer) ==========
+                        if (serverReady && audioFmt.sampleRate > 0) {
+                            size_t bytesPerSec = audioFmt.sampleRate * audioFmt.channels * (audioFmt.bitDepth / 8);
+                            if (bytesPerSec > 0) {
+                                uint64_t served = audioServerPtr->getBytesServed();
+                                // Subtract gapless offset to get per-track elapsed
+                                if (served > gaplessBytesOffset)
+                                    served -= gaplessBytesOffset;
+                                else
+                                    served = 0;
+                                uint64_t totalMs = (served * 1000) / bytesPerSec;
                                 uint32_t elapsedSec = static_cast<uint32_t>(totalMs / 1000);
                                 uint32_t elapsedMs = static_cast<uint32_t>(totalMs);
                                 slimproto->updateElapsed(elapsedSec, elapsedMs);
 
                                 if (elapsedSec >= lastElapsedLog + 10) {
                                     lastElapsedLog = elapsedSec;
-                                    LOG_DEBUG("[Audio] Elapsed: " << elapsedSec << "s"
+                                    LOG_DEBUG("[Audio] Elapsed: " << elapsedSec << "s (served)"
                                               << " cache=" << cacheFrames() << "f");
                                 }
                             }
