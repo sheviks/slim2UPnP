@@ -683,6 +683,7 @@ int main(int argc, char* argv[]) {
                         while (audioTestRunning.load(std::memory_order_acquire) &&
                                (!httpEof || dsdReader->availableBytes() > 0 ||
                                 !dsdReader->isFinished() ||
+                                !stmdSent ||
                                 (stmdSent && !gaplessWaitDone))) {
 
                             // === PHASE 1: HTTP read + feed ===
@@ -978,7 +979,7 @@ int main(int argc, char* argv[]) {
                     bool stmdSent = false;
 
                     while (audioTestRunning.load(std::memory_order_acquire) &&
-                           (!httpEof || cacheFrames() > 0)) {
+                           (!httpEof || cacheFrames() > 0 || !stmdSent)) {
 
                         // ========== PHASE 1a: HTTP read ==========
                         bool gotData = false;
@@ -1255,8 +1256,10 @@ int main(int argc, char* argv[]) {
                         }
 
                         // ========== PHASE 7: Anti-busy-loop ==========
-                        if (!gotData && cacheFrames() == 0 && !httpEof) {
-                            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                        if (!gotData && cacheFrames() == 0) {
+                            // Sleep when waiting for data OR waiting for STMd to fire
+                            std::this_thread::sleep_for(std::chrono::milliseconds(
+                                (httpEof && !stmdSent) ? 100 : 1));
                         }
 
                         if (decoder->hasError()) {
