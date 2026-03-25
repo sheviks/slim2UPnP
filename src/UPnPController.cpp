@@ -364,6 +364,27 @@ bool UPnPController::setAVTransportURI(const std::string& uri,
     return false;
 }
 
+bool UPnPController::setNextAVTransportURI(const std::string& uri,
+                                            const std::string& metadata) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    auto* response = sendAction(
+        m_renderer.avTransportControlURL,
+        AVTRANSPORT_TYPE,
+        "SetNextAVTransportURI",
+        {{"InstanceID", "0"},
+         {"NextURI", uri},
+         {"NextURIMetaData", metadata}});
+
+    if (response) {
+        ixmlDocument_free(response);
+        LOG_DEBUG("[UPnP] SetNextAVTransportURI: " << uri);
+        return true;
+    }
+    LOG_ERROR("[UPnP] SetNextAVTransportURI failed for: " << uri);
+    return false;
+}
+
 bool UPnPController::play(const std::string& speed) {
     std::lock_guard<std::mutex> lock(m_mutex);
 

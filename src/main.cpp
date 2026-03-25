@@ -397,20 +397,32 @@ int main(int argc, char* argv[]) {
     // Start Audio HTTP Server
     // ============================================
 
-    auto audioServer = std::make_unique<AudioHttpServer>();
+    // Dual AudioHttpServer for ping-pong gapless (slot A and slot B)
+    auto audioServerA = std::make_unique<AudioHttpServer>();
+    auto audioServerB = std::make_unique<AudioHttpServer>();
 
-    // Use UPnP's detected IP for the audio server
+    // Use UPnP's detected IP for both servers
     std::string serverIP = upnp->getServerIP();
     if (!serverIP.empty()) {
-        audioServer->setLocalIP(serverIP);
+        audioServerA->setLocalIP(serverIP);
+        audioServerB->setLocalIP(serverIP);
     }
 
-    if (!audioServer->start(config.httpServerPort)) {
-        std::cerr << "Failed to start audio HTTP server" << std::endl;
+    if (!audioServerA->start(0)) {  // Auto port for slot A
+        std::cerr << "Failed to start audio HTTP server A" << std::endl;
+        return 1;
+    }
+    if (!audioServerB->start(0)) {  // Auto port for slot B
+        std::cerr << "Failed to start audio HTTP server B" << std::endl;
         return 1;
     }
 
-    AudioHttpServer* audioServerPtr = audioServer.get();
+    // Ping-pong: servers[0] = slot A, servers[1] = slot B
+    AudioHttpServer* servers[2] = { audioServerA.get(), audioServerB.get() };
+    std::atomic<int> currentSlot{0};  // Index of active slot
+
+    // Convenience alias for backward compatibility in cold start
+    AudioHttpServer* audioServerPtr = servers[0];
 
     // ============================================
     // Autodiscover LMS if not specified
@@ -427,7 +439,8 @@ int main(int argc, char* argv[]) {
             }
         }
         if (config.lmsServer.empty()) {
-            audioServer->stop();
+            audioServerA->stop();
+            audioServerB->stop();
             upnp->shutdown();
             return 0;
         }
@@ -439,7 +452,8 @@ int main(int argc, char* argv[]) {
     std::cout << "  LMS Server: " << config.lmsServer << ":" << config.lmsPort << std::endl;
     std::cout << "  Player:     " << config.playerName << std::endl;
     std::cout << "  Renderer:   " << upnp->getRenderer().friendlyName << std::endl;
-    std::cout << "  HTTP:       " << audioServer->getStreamURL() << std::endl;
+    std::cout << "  HTTP A:     " << audioServerA->getStreamURL() << std::endl;
+    std::cout << "  HTTP B:     " << audioServerB->getStreamURL() << std::endl;
     std::cout << "  Max Rate:   " << config.maxSampleRate << " Hz" << std::endl;
     std::cout << "  DSD:        " << (config.dsdEnabled ? "enabled" : "disabled") << std::endl;
     if (!config.macAddress.empty()) {
@@ -552,8 +566,11 @@ int main(int argc, char* argv[]) {
                     audioTestThread.join();
                 }
 
-                // Reset audio server for new stream
-                audioServerPtr->reset();
+                // Reset both audio servers for new stream
+                servers[0]->reset();
+                servers[1]->reset();
+                currentSlot.store(0);
+                audioServerPtr = servers[0];
 
                 // Connect HTTP stream
                 if (!httpStream->connect(streamIp, streamPort, httpRequest)) {
@@ -583,7 +600,10 @@ int main(int argc, char* argv[]) {
                     &pendingMutex, &pendingNextTrack, &streamGeneration,
                     thisGeneration,
                     formatCode, pcmRate, pcmSize, pcmChannels, pcmEndian,
-                    audioServerPtr, upnpPtr, &config]() {
+                    servers, &currentSlot, upnpPtr, &config]() {
+
+                    // Local pointer to active server — updated on slot switch
+                    AudioHttpServer* audioServerPtr = servers[currentSlot.load()];
 
                     bool openFailedInGapless = false;
 
@@ -1002,19 +1022,13 @@ int main(int argc, char* argv[]) {
                             LOG_INFO("[Audio] Decoding: " << fmt.sampleRate << " Hz, "
                                      << fmt.bitDepth << "-bit, " << fmt.channels << " ch");
 
-                            // Gapless continuation check
+                            // Gapless: always use SetNextAVTransportURI
+                            // (each track is a separate HTTP stream)
                             if (serverReady && !pcmFirstTrack) {
-                                bool sameFormat =
-                                    (fmt.sampleRate == audioFmt.sampleRate &&
-                                     fmt.channels == audioFmt.channels);
-                                if (sameFormat) {
-                                    LOG_INFO("[Gapless] PCM same format, continuing stream"
-                                        " (cache: " << cacheFrames() << " frames)");
-                                    slimproto->sendStat(StatEvent::STMl);
-                                } else {
-                                    // Format change — drain old cache, then reopen
-                                    LOG_INFO("[Gapless] Format change, draining "
-                                             << cacheFrames() << " old frames");
+                                // Drain remaining old cache into old slot
+                                if (cacheFrames() > 0) {
+                                    LOG_INFO("[Gapless] Draining " << cacheFrames()
+                                             << " old frames to slot " << currentSlot.load());
                                     while (cacheFrames() > 0 &&
                                            audioTestRunning.load(std::memory_order_acquire)) {
                                         if (audioServerPtr->getBufferLevel() > 0.95f) {
@@ -1031,13 +1045,9 @@ int main(int argc, char* argv[]) {
                                         }
                                         decodeCachePos += push * detectedChannels;
                                     }
-                                    // Signal end of old stream, renderer will reconnect
-                                    audioServerPtr->signalEndOfStream();
-                                    upnpPtr->stop();
-                                    std::this_thread::sleep_for(std::chrono::milliseconds(200));
-                                    audioServerPtr->reset();
-                                    serverReady = false;
                                 }
+                                // Switch to next slot for new track
+                                serverReady = false;
                             }
 
                             detectedChannels = fmt.channels;
@@ -1054,19 +1064,8 @@ int main(int argc, char* argv[]) {
                                            (audioFmt.bitDepth / 8));
                         }
 
-                        // ========== PHASE 3: Prebuffer ==========
+                        // ========== PHASE 3: Prebuffer + UPnP setup ==========
                         if (formatLogged && !serverReady) {
-                            // Same-format gapless
-                            if (!pcmFirstTrack &&
-                                audioFmt.sampleRate == prevAudioFmt.sampleRate &&
-                                audioFmt.bitDepth == prevAudioFmt.bitDepth &&
-                                audioFmt.channels == prevAudioFmt.channels) {
-                                LOG_INFO("[Gapless] PCM same format, continuing stream");
-                                serverReady = true;
-                                slimproto->sendStat(StatEvent::STMl);
-                                continue;
-                            }
-
                             auto fmt = decoder->getFormat();
                             size_t targetFrames = static_cast<size_t>(
                                 fmt.sampleRate) * prebufferMs / 1000;
@@ -1085,8 +1084,16 @@ int main(int argc, char* argv[]) {
                                     }
                                 }
 
-                                // Prebuffer into ring buffer FIRST (before making server available)
-                                // This ensures the renderer gets data immediately on connect
+                                // For gapless, switch to next slot
+                                if (!pcmFirstTrack) {
+                                    int nextSlot = 1 - currentSlot.load();
+                                    servers[nextSlot]->reset();
+                                    audioServerPtr = servers[nextSlot];
+                                    LOG_INFO("[Gapless] Preparing slot " << nextSlot
+                                             << " for next track");
+                                }
+
+                                // Prebuffer into ring buffer
                                 audioServerPtr->setFormat(audioFmt);
 
                                 const int32_t* ptr = decodeCache.data() + decodeCachePos;
@@ -1107,27 +1114,44 @@ int main(int argc, char* argv[]) {
                                     actualPushed += chunk;
                                 }
                                 decodeCachePos += actualPushed * detectedChannels;
-                                pushedFrames += actualPushed;
 
-                                // Prebuffer done — now allow renderer to connect and read
+                                // Prebuffer done — allow renderer to connect
                                 audioServerPtr->setReadyToServe();
 
-                                // Reset elapsed: prebuffered frames are not playback time
+                                // Reset elapsed for new track
                                 pushedFrames = 0;
                                 slimproto->updateElapsed(0, 0);
+                                slimproto->updateStreamBytes(0);
 
-                                // Start UPnP playback in background thread
-                                // (SetAVTransportURI blocks for seconds while renderer connects)
-                                serverReady = true;
-                                std::thread([upnpPtr, audioServerPtr, &slimproto,
-                                             &streamGeneration, thisGeneration]() {
-                                    upnpPtr->setAVTransportURI(audioServerPtr->getStreamURL());
-                                    // Only send Play+STMl if this stream is still current
-                                    if (streamGeneration.load() == thisGeneration) {
-                                        upnpPtr->play();
-                                        slimproto->sendStat(StatEvent::STMl);
-                                    }
-                                }).detach();
+                                if (pcmFirstTrack) {
+                                    // First track: SetAVTransportURI + Play
+                                    serverReady = true;
+                                    std::thread([upnpPtr, audioServerPtr, &slimproto,
+                                                 &streamGeneration, thisGeneration]() {
+                                        upnpPtr->setAVTransportURI(audioServerPtr->getStreamURL());
+                                        if (streamGeneration.load() == thisGeneration) {
+                                            upnpPtr->play();
+                                            slimproto->sendStat(StatEvent::STMl);
+                                        }
+                                    }).detach();
+                                } else {
+                                    // Gapless: SetNextAVTransportURI on new slot,
+                                    // then signal end on old slot so renderer transitions
+                                    int oldSlot = currentSlot.load();
+                                    int newSlot = 1 - oldSlot;
+                                    std::string nextURL = servers[newSlot]->getStreamURL();
+                                    LOG_INFO("[Gapless] SetNextAVTransportURI: " << nextURL);
+                                    upnpPtr->setNextAVTransportURI(nextURL);
+
+                                    // Signal end of old stream — renderer will transition
+                                    servers[oldSlot]->signalEndOfStream();
+
+                                    // Switch active slot
+                                    currentSlot.store(newSlot);
+                                    serverReady = true;
+                                    slimproto->sendStat(StatEvent::STMl);
+                                    LOG_INFO("[Gapless] Active slot now " << newSlot);
+                                }
                             }
                             continue;
                         }
@@ -1301,7 +1325,8 @@ int main(int argc, char* argv[]) {
                     audioTestRunning.store(false);
                     httpStream->disconnect();
                     upnpPtr->stop();
-                    audioServerPtr->reset();
+                    servers[0]->reset();
+                    servers[1]->reset();
                     // Only send STMf if something was actually playing
                     // (avoids confusing LMS during initial registration strm-q)
                     if (wasActive) {
@@ -1334,7 +1359,8 @@ int main(int argc, char* argv[]) {
                     audioTestRunning.store(false);
                     httpStream->disconnect();
                     upnpPtr->stop();
-                    audioServerPtr->reset();
+                    servers[0]->reset();
+                    servers[1]->reset();
                     if (wasActive) {
                         slimproto->sendStat(StatEvent::STMf);
                     }
@@ -1355,6 +1381,8 @@ int main(int argc, char* argv[]) {
     auto stopAudioThread = [&]() {
         audioTestRunning.store(false);
         httpStream->disconnect();
+        servers[0]->signalEndOfStream();
+        servers[1]->signalEndOfStream();
         if (audioTestThread.joinable()) {
             auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
             while (!audioThreadDone.load(std::memory_order_acquire) &&
@@ -1442,7 +1470,8 @@ int main(int argc, char* argv[]) {
     g_slimproto = nullptr;
     slimproto->disconnect();
 
-    audioServer->stop();
+    audioServerA->stop();
+    audioServerB->stop();
     upnp->shutdown();
 
     return 0;

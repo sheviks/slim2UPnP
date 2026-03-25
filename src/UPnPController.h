@@ -65,6 +65,8 @@ public:
 
     bool setAVTransportURI(const std::string& uri,
                            const std::string& metadata = "");
+    bool setNextAVTransportURI(const std::string& uri,
+                               const std::string& metadata = "");
     bool play(const std::string& speed = "1");
     bool stop();
     bool pause();
