@@ -618,6 +618,7 @@ int main(int argc, char* argv[]) {
                         bool formatLogged = false;
                         uint64_t lastElapsedLog = 0;
                         uint64_t gaplessBytesOffset = 0;
+                        std::atomic<bool> playStarted{false};
 
                         constexpr size_t DSD_PLANAR_BUF = 16384;
                         uint8_t planarBuf[DSD_PLANAR_BUF];
@@ -695,10 +696,12 @@ int main(int argc, char* argv[]) {
                                         totalBytes += n;
                                         // Report bytes served (real-time) instead of downloaded (fast)
                                         {
-                                            uint64_t served = audioServerPtr->getBytesServed();
-                                            if (served > gaplessBytesOffset) served -= gaplessBytesOffset;
-                                            else served = 0;
-                                            slimproto->updateStreamBytes(served);
+                                            if (playStarted.load(std::memory_order_relaxed)) {
+                                                uint64_t served = audioServerPtr->getBytesServed();
+                                                if (served > gaplessBytesOffset) served -= gaplessBytesOffset;
+                                                else served = 0;
+                                                slimproto->updateStreamBytes(served);
+                                            }
                                         }
                                         dsdReader->feed(httpBuf, static_cast<size_t>(n));
                                     } else if (n < 0 || !httpStream->isConnected()) {
@@ -800,13 +803,15 @@ int main(int argc, char* argv[]) {
                                     serverReady = true;
                                     std::thread([upnpPtr, audioServerPtr, &slimproto,
                                                  &streamGeneration, thisGeneration,
-                                                 &gaplessBytesOffset]() {
+                                                 &gaplessBytesOffset, &playStarted]() {
                                         upnpPtr->setAVTransportURI(audioServerPtr->getStreamURL());
                                         // Only send Play+STMl if this stream is still current
                                         if (streamGeneration.load() == thisGeneration) {
                                             upnpPtr->play();
                                             gaplessBytesOffset = audioServerPtr->getBytesServed();
                                             slimproto->updateElapsed(0, 0);
+                                            slimproto->updateStreamBytes(0);
+                                            playStarted.store(true, std::memory_order_release);
                                             slimproto->sendStat(StatEvent::STMl);
                                         }
                                     }).detach();
@@ -828,7 +833,7 @@ int main(int argc, char* argv[]) {
                             }
 
                             // === PHASE 5: Update elapsed (based on bytes served to renderer) ===
-                            if (serverReady && byteRateTotal > 0) {
+                            if (playStarted.load(std::memory_order_acquire) && byteRateTotal > 0) {
                                 uint64_t served = audioServerPtr->getBytesServed();
                                 if (served > gaplessBytesOffset)
                                     served -= gaplessBytesOffset;
@@ -959,6 +964,7 @@ int main(int argc, char* argv[]) {
                     unsigned int prebufferMs = PREBUFFER_MS_NORMAL;
                     uint64_t pushedFrames = 0;
                     uint64_t gaplessBytesOffset = 0;  // bytesServed at gapless transition
+                    std::atomic<bool> playStarted{false};  // Set after Play + offset capture
 
                     bool dopDetected = false;
                     bool httpEof = false;
@@ -978,7 +984,7 @@ int main(int argc, char* argv[]) {
                                     gotData = true;
                                     totalBytes += n;
                                     // Report bytes served (real-time) instead of downloaded (fast)
-                                    {
+                                    if (playStarted.load(std::memory_order_relaxed)) {
                                         uint64_t served = audioServerPtr->getBytesServed();
                                         if (served > gaplessBytesOffset) served -= gaplessBytesOffset;
                                         else served = 0;
@@ -1151,7 +1157,7 @@ int main(int argc, char* argv[]) {
                                 serverReady = true;
                                 std::thread([upnpPtr, audioServerPtr, &slimproto,
                                              &streamGeneration, thisGeneration,
-                                             &gaplessBytesOffset]() {
+                                             &gaplessBytesOffset, &playStarted]() {
                                     upnpPtr->setAVTransportURI(audioServerPtr->getStreamURL());
                                     // Only send Play+STMl if this stream is still current
                                     if (streamGeneration.load() == thisGeneration) {
@@ -1160,6 +1166,8 @@ int main(int argc, char* argv[]) {
                                         // (prebuffer data served before Play)
                                         gaplessBytesOffset = audioServerPtr->getBytesServed();
                                         slimproto->updateElapsed(0, 0);
+                                        slimproto->updateStreamBytes(0);
+                                        playStarted.store(true, std::memory_order_release);
                                         slimproto->sendStat(StatEvent::STMl);
                                     }
                                 }).detach();
@@ -1186,7 +1194,7 @@ int main(int argc, char* argv[]) {
                         }
 
                         // ========== PHASE 5: Update elapsed (based on bytes served to renderer) ==========
-                        if (serverReady && audioFmt.sampleRate > 0) {
+                        if (playStarted.load(std::memory_order_acquire) && audioFmt.sampleRate > 0) {
                             size_t bytesPerSec = audioFmt.sampleRate * audioFmt.channels * (audioFmt.bitDepth / 8);
                             if (bytesPerSec > 0) {
                                 uint64_t served = audioServerPtr->getBytesServed();
