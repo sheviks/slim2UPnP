@@ -1,4 +1,4 @@
-# slim2UPnP
+# slim2UPnP Prerelase v0.1.0 beta
 
 Slimproto to UPnP bridge with native DSD support.
 
