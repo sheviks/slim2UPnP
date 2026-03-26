@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.1.0-beta] - 2026-03-26
+
+### Major
+- **Passthrough mode** — audio from LMS is proxied directly to the UPnP renderer without decoding
+- All decoder dependencies removed (libFLAC, FFmpeg, libmpg123, libvorbis, fdk-aac)
+- Binary reduced from ~500KB to 191KB, only 5 source files
+
+### Added
+- FLAC/DSF header parsing for track duration (STMd timing)
+- Wall clock elapsed tracking
+- Content-Type extraction from LMS HTTP response
+- MIME type mapping for all formats (FLAC, WAV, DSF, DFF, MP3, AAC, OGG)
+
+### Preserved
+- SetNextAVTransportURI gapless playback (dual AudioHttpServer slots A/B)
+
 ## [0.0.3-beta] - 2026-03-25
 
 ### Added

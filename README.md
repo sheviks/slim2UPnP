@@ -2,7 +2,7 @@
 
 Slimproto to UPnP bridge with native DSD support.
 
-slim2UPnP connects a Logitech Media Server (LMS) to any UPnP/DLNA renderer, acting as a virtual player. Unlike squeeze2upnp, it provides full DSD playback (DSF, DFF, DoP) through a single, clean binary with no external dependencies on Squeezelite.
+slim2UPnP connects a Logitech Media Server (LMS) to any UPnP/DLNA renderer, acting as a virtual player. It operates in **passthrough mode** — audio is proxied directly from LMS to the renderer without decoding. The renderer handles all format decoding (FLAC, DSD, MP3, etc.). Single binary, minimal dependencies, ~191KB.
 
 ---
 
@@ -24,11 +24,12 @@ If you find this tool valuable, you can support development:
 
 | | squeeze2upnp | slim2UPnP |
 |---|---|---|
-| **DSD** | No native DSD | Full DSD support (DSF/DFF/DoP) |
-| **Architecture** | Squeezelite + bridge | Single binary |
+| **DSD** | No native DSD | Full DSD passthrough (DSF/DFF/DoP) |
+| **Architecture** | Squeezelite + bridge | Single binary, passthrough |
 | **Slimproto** | Delegated to Squeezelite | Native implementation |
-| **Decoder** | External | Internal (libFLAC, FFmpeg) |
-| **Distribution** | Complex build chain | Precompiled binaries possible |
+| **Decoding** | Internal | Passthrough (renderer decodes) |
+| **Dependencies** | Many libraries | libupnp only |
+| **Distribution** | Complex build chain | Precompiled binaries (~191KB) |
 
 ## Quick Start
 
@@ -54,19 +55,18 @@ cmake --build build
 
 ```
 LMS (network)
-  -> slim2UPnP (single process)
+  -> slim2UPnP (single process, passthrough)
        -> SlimprotoClient (TCP port 3483)    : control protocol
        -> HttpStreamClient (port 9000)       : encoded audio from LMS
-       -> Decoder (FLAC/PCM/DSD/MP3/OGG/AAC) : decode to raw audio
-       -> AudioHttpServer (auto port)        : serves decoded audio via HTTP
+       -> AudioHttpServer (auto port)        : proxies audio to renderer via HTTP
        -> UPnPController (SSDP + SOAP)       : controls the UPnP renderer
             -> UPnP Renderer (e.g., DirettaRendererUPnP)
                  -> DAC
 ```
 
-**Audio flow** (pull model): the decode thread fills a ring buffer, the UPnP renderer pulls audio from the AudioHttpServer via HTTP GET.
+**Audio flow** (passthrough): the audio thread fetches encoded audio from LMS and writes it to a ring buffer. The UPnP renderer pulls audio from the AudioHttpServer via HTTP GET. No decoding — the renderer handles all format decoding.
 
-**Threading**: main (init/signals) + slimproto (TCP) + audio (decode) + HTTP server (serve).
+**Threading**: main (init/signals) + slimproto (TCP) + audio (fetch) + HTTP server (serve).
 
 ## Options
 
@@ -88,7 +88,6 @@ UPnP Renderer:
 Audio:
   --max-rate <hz>          Max sample rate (default: 1536000)
   --no-dsd                 Disable DSD support
-  --decoder <backend>      Decoder: native (default), ffmpeg
 
 Logging:
   -v, --verbose            Debug output
@@ -106,29 +105,22 @@ Other:
 **Required:**
 - C++17 compiler (GCC 7+, Clang 5+)
 - CMake 3.10+
-- libFLAC (`libflac-dev`)
 - libupnp (`libupnp-dev`)
 - pthreads
 
-**Optional:**
-- libmpg123 (`libmpg123-dev`) — MP3 decoding
-- libvorbis (`libvorbis-dev`) — Ogg Vorbis decoding
-- fdk-aac (`libfdk-aac-dev`) — AAC decoding
-- FFmpeg (`libavcodec-dev`, `libavutil-dev`) — alternative decoder backend
+No decoder libraries needed — slim2UPnP operates in passthrough mode.
 
 ### Install dependencies
 
 ```bash
 # Debian/Ubuntu
-sudo apt install build-essential cmake libflac-dev libupnp-dev \
-  libmpg123-dev libvorbis-dev libavcodec-dev libavutil-dev
+sudo apt install build-essential cmake libupnp-dev
 
 # Fedora
-sudo dnf install gcc-c++ cmake flac-devel libupnp-devel \
-  mpg123-devel libvorbis-devel ffmpeg-free-devel
+sudo dnf install gcc-c++ cmake libupnp-devel
 
 # Arch
-sudo pacman -S base-devel cmake flac libupnp mpg123 libvorbis ffmpeg
+sudo pacman -S base-devel cmake libupnp
 ```
 
 ### Precompiled binaries
@@ -148,7 +140,7 @@ sudo cp slim2upnp-x64-v2 /usr/local/bin/slim2upnp
 slim2upnp --list-renderers
 ```
 
-> **Note:** Each binary is compiled for a specific CPU architecture. A binary built on x86_64 will not run on ARM64 and vice versa. Runtime libraries (libFLAC, libupnp, etc.) must be installed on the target system — the installer handles this automatically.
+> **Note:** Each binary is compiled for a specific CPU architecture. A binary built on x86_64 will not run on ARM64 and vice versa. Static binaries have no runtime library dependencies.
 
 ### Build from source
 
@@ -200,7 +192,7 @@ From the Web UI you can:
 - **Select your UPnP renderer** (enter its name, e.g. "Diretta Renderer")
 - **Set the LMS server** IP address (or leave empty for auto-discovery)
 - **Choose a player name** (shown in the LMS interface)
-- **Toggle audio options** (DSD, decoder backend)
+- **Toggle audio options** (DSD passthrough)
 - **Save & Restart** the service with one click
 
 No command line, no config file editing needed.
@@ -256,17 +248,16 @@ sudo ./install.sh /path/to/bin   # Install a specific binary
 
 ## DSD Support
 
-slim2UPnP handles DSD natively:
-- **DSF** and **DFF** container parsing
-- **DoP** (DSD over PCM) detection and passthrough
-- Raw DSD streaming
+slim2UPnP passes DSD streams directly to the renderer:
+- **DSF** and **DFF** passthrough
+- **DoP** (DSD over PCM) passthrough
 - DSD64 through DSD512+
 
-The renderer's capabilities are queried via UPnP `GetProtocolInfo`. DSD is served as DSF container or DoP-in-WAV depending on what the renderer supports.
+The renderer handles all DSD decoding.
 
 ## Gapless Playback
 
-Same-format tracks are chained seamlessly: the HTTP stream continues without closing the connection between tracks. Cross-format transitions (e.g., FLAC to DSD) cause a clean stop/restart cycle.
+Gapless playback uses the standard UPnP mechanism: dual AudioHttpServer slots (A/B) with `SetNextAVTransportURI`. Each track is a separate HTTP stream. The renderer pre-connects to the next slot while finishing the current track.
 
 ## License
 
