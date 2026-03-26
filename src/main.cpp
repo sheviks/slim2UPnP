@@ -610,6 +610,9 @@ int main(int argc, char* argv[]) {
                     }
 
                     // --- Stream loop: read HTTP → write to ring buffer ---
+                    auto playStartTime = std::chrono::steady_clock::now();
+                    uint32_t lastElapsedLog = 0;
+
                     while (audioTestRunning.load(std::memory_order_acquire) && !httpEof) {
                         ssize_t n = httpStream->readWithTimeout(httpBuf, sizeof(httpBuf), 10);
                         if (n > 0) {
@@ -618,6 +621,19 @@ int main(int argc, char* argv[]) {
                             slimproto->updateStreamBytes(totalBytes);
                         } else if (n < 0 || !httpStream->isConnected()) {
                             httpEof = true;
+                        }
+
+                        // Update elapsed via wall clock since Play
+                        auto now = std::chrono::steady_clock::now();
+                        uint32_t elapsedMs = static_cast<uint32_t>(
+                            std::chrono::duration_cast<std::chrono::milliseconds>(
+                                now - playStartTime).count());
+                        uint32_t elapsedSec = elapsedMs / 1000;
+                        slimproto->updateElapsed(elapsedSec, elapsedMs);
+
+                        if (elapsedSec >= lastElapsedLog + 10) {
+                            lastElapsedLog = elapsedSec;
+                            LOG_DEBUG("[Audio] Elapsed: " << elapsedSec << "s (wall clock)");
                         }
                     }
 
