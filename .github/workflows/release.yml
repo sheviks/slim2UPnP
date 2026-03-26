@@ -256,4 +256,4 @@ jobs:
             release/slim2upnp-aarch64
             release/SHA256SUMS
           draft: false
-          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+          prerelease: false
