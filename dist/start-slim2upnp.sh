@@ -21,7 +21,6 @@ fi
 [ -n "$LMS_SERVER" ]   && ARGS+=(-s "$LMS_SERVER")
 [ -n "$PLAYER_NAME" ]  && ARGS+=(-n "$PLAYER_NAME")
 [ "$NO_DSD" = "yes" ]  && ARGS+=(--no-dsd)
-[ -n "$DECODER" ]      && ARGS+=(--decoder "$DECODER")
 [ -n "$INTERFACE" ]    && ARGS+=(--interface "$INTERFACE")
 [ -n "$HTTP_PORT" ]    && ARGS+=(--http-port "$HTTP_PORT")
 [ "$VERBOSE" = "yes" ] && ARGS+=(-v)

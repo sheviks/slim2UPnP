@@ -61,17 +61,6 @@
                         {"value": "", "label": "No (DSD enabled)"},
                         {"value": "yes", "label": "Yes (force PCM only)"}
                     ]
-                },
-                {
-                    "key": "DECODER",
-                    "type": "select",
-                    "label": "Decoder Backend",
-                    "description": "Audio decoder engine. 'native' uses libFLAC (recommended). 'ffmpeg' uses FFmpeg (alternative).",
-                    "default": "",
-                    "options": [
-                        {"value": "", "label": "Native (default)"},
-                        {"value": "ffmpeg", "label": "FFmpeg"}
-                    ]
                 }
             ]
         },

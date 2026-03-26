@@ -177,13 +177,6 @@ Config parseArguments(int argc, char* argv[]) {
         else if (arg == "--no-dsd") {
             config.dsdEnabled = false;
         }
-        else if (arg == "--decoder" && i + 1 < argc) {
-            config.decoderBackend = argv[++i];
-            if (config.decoderBackend != "native" && config.decoderBackend != "ffmpeg") {
-                std::cerr << "Invalid decoder backend. Use: native, ffmpeg" << std::endl;
-                exit(1);
-            }
-        }
         else if (arg == "--list-renderers" || arg == "-l") {
             config.listRenderers = true;
         }
@@ -216,7 +209,6 @@ Config parseArguments(int argc, char* argv[]) {
                       << "Audio:\n"
                       << "  --max-rate <hz>        Max sample rate (default: 1536000)\n"
                       << "  --no-dsd               Disable DSD support\n"
-                      << "  --decoder <backend>    Decoder backend: native (default), ffmpeg\n"
                       << "\n"
                       << "Logging:\n"
                       << "  -v, --verbose          Debug output (log level: DEBUG)\n"
@@ -324,10 +316,6 @@ int main(int argc, char* argv[]) {
     std::cout << "Mode: passthrough (no decoding)" << std::endl;
 
     Config config = parseArguments(argc, argv);
-
-    if (config.decoderBackend == "ffmpeg") {
-        std::cout << "Decoder: FFmpeg backend" << std::endl;
-    }
 
     // Apply log level
     if (config.verbose) {

@@ -43,9 +43,6 @@ PLAYER_NAME=""
 # Set to "yes" to disable DSD and force PCM output
 NO_DSD=""
 
-# Decoder backend: native (default) or ffmpeg
-DECODER=""
-
 # ── Network Options ───────────────────────────────────────────────────────
 # Force a specific network interface (e.g., eth0, enp3s0)
 INTERFACE=""

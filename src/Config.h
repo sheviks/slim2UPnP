@@ -26,7 +26,6 @@ struct Config {
     // Audio
     int maxSampleRate = 1536000;
     bool dsdEnabled = true;
-    std::string decoderBackend = "native";  // "native" or "ffmpeg"
 
     // Logging
     bool verbose = false;
