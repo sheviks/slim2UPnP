@@ -638,6 +638,41 @@ int main(int argc, char* argv[]) {
                         break;
                     }
 
+                    // Auto-detect format from magic bytes when Content-Type is generic
+                    // (Roon sends no Content-Type, falling back to application/octet-stream)
+                    if (headerLen >= 4 && (contentType == "application/octet-stream" ||
+                                           contentType.empty())) {
+                        if (headerBuf[0] == 'f' && headerBuf[1] == 'L' &&
+                            headerBuf[2] == 'a' && headerBuf[3] == 'C') {
+                            contentType = "audio/flac";
+                            LOG_INFO("[Audio] Detected FLAC from magic bytes");
+                        } else if (headerBuf[0] == 'R' && headerBuf[1] == 'I' &&
+                                   headerBuf[2] == 'F' && headerBuf[3] == 'F') {
+                            contentType = "audio/wav";
+                            LOG_INFO("[Audio] Detected WAV from magic bytes");
+                        } else if (headerBuf[0] == 'D' && headerBuf[1] == 'S' &&
+                                   headerBuf[2] == 'D' && headerBuf[3] == ' ') {
+                            contentType = "audio/dsf";
+                            LOG_INFO("[Audio] Detected DSF from magic bytes");
+                        } else if (headerBuf[0] == 'F' && headerBuf[1] == 'R' &&
+                                   headerBuf[2] == 'M' && headerBuf[3] == '8') {
+                            contentType = "audio/dff";
+                            LOG_INFO("[Audio] Detected DFF from magic bytes");
+                        } else if (headerBuf[0] == 'F' && headerBuf[1] == 'O' &&
+                                   headerBuf[2] == 'R' && headerBuf[3] == 'M') {
+                            contentType = "audio/aiff";
+                            LOG_INFO("[Audio] Detected AIFF from magic bytes");
+                        } else if ((headerBuf[0] == 0xFF && (headerBuf[1] & 0xE0) == 0xE0) ||
+                                   (headerBuf[0] == 'I' && headerBuf[1] == 'D' && headerBuf[2] == '3')) {
+                            contentType = "audio/mpeg";
+                            LOG_INFO("[Audio] Detected MP3 from magic bytes");
+                        }
+                        // Update AudioHttpServer MIME type with detected format
+                        if (contentType != "application/octet-stream") {
+                            audioServerPtr->setPassthroughMime(contentType);
+                        }
+                    }
+
                     // Parse track duration from stream header
                     uint32_t trackDurationSec = parseTrackDuration(
                         headerBuf, headerLen, contentType);
