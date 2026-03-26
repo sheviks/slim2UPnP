@@ -637,9 +637,38 @@ int main(int argc, char* argv[]) {
                         }
                     }
 
-                    // --- HTTP EOF: send STMd immediately ---
+                    // --- HTTP EOF: wait for renderer to consume data, then send STMd ---
                     if (httpEof && audioTestRunning.load(std::memory_order_acquire)) {
-                        LOG_INFO("[Audio] Stream complete: " << totalBytes << " bytes");
+                        LOG_INFO("[Audio] HTTP complete: " << totalBytes
+                                 << " bytes, waiting for renderer...");
+
+                        // Keep updating elapsed while renderer plays from its buffer
+                        while (audioTestRunning.load(std::memory_order_acquire)) {
+                            uint64_t served = audioServerPtr->getBytesServed();
+                            // Renderer consumed all data (within 4KB tolerance)
+                            if (served + 4096 >= totalBytes) break;
+                            // Client disconnected (renderer done reading)
+                            if (!audioServerPtr->isClientConnected()) break;
+
+                            // Update elapsed
+                            auto now = std::chrono::steady_clock::now();
+                            uint32_t elapsedMs = static_cast<uint32_t>(
+                                std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    now - playStartTime).count());
+                            uint32_t elapsedSec = elapsedMs / 1000;
+                            slimproto->updateElapsed(elapsedSec, elapsedMs);
+
+                            if (elapsedSec >= lastElapsedLog + 10) {
+                                lastElapsedLog = elapsedSec;
+                                LOG_DEBUG("[Audio] Elapsed: " << elapsedSec
+                                          << "s (draining, served=" << served << ")");
+                            }
+
+                            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                        }
+
+                        LOG_INFO("[Audio] Stream complete: " << totalBytes
+                                 << " bytes, served=" << audioServerPtr->getBytesServed());
                         slimproto->sendStat(StatEvent::STMd);
                     }
 
