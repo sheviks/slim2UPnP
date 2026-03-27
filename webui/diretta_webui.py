@@ -12,6 +12,7 @@ Usage:
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 from html import escape
@@ -115,19 +116,34 @@ def save_settings(profile, settings):
 
 
 def restart_service(service_name):
-    """Restart a systemd service. Returns (success, message)."""
-    try:
-        result = subprocess.run(
-            ['systemctl', 'restart', service_name],
-            capture_output=True, text=True, timeout=15
-        )
-        if result.returncode == 0:
-            return True, f'Service {service_name} restarted.'
-        return False, f'Restart failed: {result.stderr.strip()}'
-    except subprocess.TimeoutExpired:
-        return False, 'Restart timed out (15s).'
-    except FileNotFoundError:
-        return False, 'systemctl not found.'
+    """Restart a service (systemd or OpenRC). Returns (success, message)."""
+    # Try systemd first
+    if shutil.which('systemctl'):
+        try:
+            result = subprocess.run(
+                ['systemctl', 'restart', service_name],
+                capture_output=True, text=True, timeout=15
+            )
+            if result.returncode == 0:
+                return True, f'Service {service_name} restarted (systemd).'
+            return False, f'Restart failed: {result.stderr.strip()}'
+        except subprocess.TimeoutExpired:
+            return False, 'Restart timed out (15s).'
+
+    # Try OpenRC (GentooPlayer, Gentoo, Alpine)
+    if shutil.which('rc-service'):
+        try:
+            result = subprocess.run(
+                ['rc-service', service_name, 'restart'],
+                capture_output=True, text=True, timeout=15
+            )
+            if result.returncode == 0:
+                return True, f'Service {service_name} restarted (OpenRC).'
+            return False, f'Restart failed: {result.stderr.strip()}'
+        except subprocess.TimeoutExpired:
+            return False, 'Restart timed out (15s).'
+
+    return False, 'No init system found (neither systemctl nor rc-service).'
 
 
 def render_setting_input(setting, current_value):
