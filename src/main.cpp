@@ -738,8 +738,9 @@ int main(int argc, char* argv[]) {
                         LOG_INFO("[Audio] HTTP complete: " << totalBytes
                                  << " bytes, duration=" << trackDurationSec << "s");
 
-                        // Wait until wall clock reaches near track end (or data consumed)
+                        // Wait until wall clock reaches near track end
                         constexpr uint32_t STMD_LEAD_SEC = 3;
+                        std::chrono::steady_clock::time_point drainStartTime{};
                         uint32_t stmdTargetSec = (trackDurationSec > STMD_LEAD_SEC)
                             ? trackDurationSec - STMD_LEAD_SEC : 0;
 
@@ -762,11 +763,24 @@ int main(int argc, char* argv[]) {
                                 break;
                             }
 
-                            // Duration unknown: keep waiting and updating elapsed.
-                            // Don't send STMd based on bytes-served — the renderer
-                            // may still have minutes of audio in its buffer.
-                            // The loop exits when audioTestRunning becomes false
-                            // (strm-q from LMS/Roon) which is the natural track end.
+                            // Duration unknown: wait for renderer to consume data,
+                            // then add a delay for the renderer's internal buffer.
+                            if (trackDurationSec == 0) {
+                                uint64_t served = audioServerPtr->getBytesServed();
+                                bool dataConsumed = (served + 4096 >= totalBytes) ||
+                                                    !audioServerPtr->isClientConnected();
+                                if (dataConsumed && drainStartTime.time_since_epoch().count() == 0) {
+                                    drainStartTime = std::chrono::steady_clock::now();
+                                    LOG_INFO("[Audio] Renderer has all data, "
+                                             "waiting for playback buffer...");
+                                }
+                                if (drainStartTime.time_since_epoch().count() != 0) {
+                                    auto drainElapsed = std::chrono::duration_cast<
+                                        std::chrono::seconds>(
+                                            std::chrono::steady_clock::now() - drainStartTime).count();
+                                    if (drainElapsed >= 10) break;
+                                }
+                            }
 
                             std::this_thread::sleep_for(std::chrono::milliseconds(100));
                         }
