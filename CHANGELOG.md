@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.3-beta] - 2026-03-27
+
+### Fixed
+- **Roon track truncation**: when track duration is unknown (Roon sends FLAC with `total_samples=0`), STMd is no longer sent prematurely based on bytes consumed. The wait loop now continues until LMS/Roon sends a natural stop, preventing tracks from being cut short before playback completes.
+- **WebUI OpenRC support** (GentooPlayer): service restart now detects the init system and uses `rc-service` for OpenRC instead of `systemctl`
+
+### Changed
+- Version updated to 0.1.3-beta
+
 ## [0.1.2-beta] - 2026-03-27
 
 ### Fixed
