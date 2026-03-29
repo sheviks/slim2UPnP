@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.5-beta] - 2026-03-29
+
+### Fixed
+- **Track end detection**: replaced fixed 10-second drain delay with renderer transport state polling (`GetTransportInfo`). STMd is now sent only when the renderer has actually finished playing, preventing premature track cutoff on long buffer drains (reported by Pascal)
+
+### Changed
+- Version updated to 0.1.5-beta
+
 ## [0.1.4-beta] - 2026-03-27
 
 ### Fixed
