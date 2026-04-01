@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.6-beta] - 2026-04-01
+
+### Fixed
+- **No audio after renderer restart via web UI**: When DirettaRendererUPnP was restarted (e.g., "Save & Restart" in web UI), slim2UPnP kept using stale control URLs causing all SOAP actions to fail silently. Now handles UPnP BYEBYE/ALIVE advertisements to automatically reconnect and refresh URLs when the renderer restarts. Also detects SOAP connection failures for faster recovery. (Reported by Pascal)
+
+---
+
 ## [0.1.5-beta] - 2026-03-29
 
 ### Fixed
