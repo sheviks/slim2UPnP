@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.7-beta] - 2026-04-05
+
+### Fixed
+- **Roon PCM: false MP3 detection causing renderer crash**: when Roon sends raw PCM (`format=p`), the first audio samples could accidentally match the MP3 sync pattern (`0xFF 0xE0+`). slim2UPnP would then serve the stream as `audio.mp3`, causing DirettaRendererUPnP to crash. Magic bytes detection is now skipped when `format=p` — the stream is always served as WAV with a generated header.
+
+### Known Limitations
+- Roon raw PCM passthrough still has known issues (endianness, truncation at start). **Recommended: enable FLAC codec in Roon settings** for stable playback.
+
+### Changed
+- Version updated to 0.1.7-beta
+
 ## [0.1.6-beta] - 2026-04-01
 
 ### Fixed

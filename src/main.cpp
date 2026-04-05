@@ -35,7 +35,7 @@
 #include <unistd.h>
 #include <poll.h>
 
-#define SLIM2UPNP_VERSION "0.1.6-beta"
+#define SLIM2UPNP_VERSION "0.1.7-beta"
 
 // ============================================
 // Globals
@@ -648,8 +648,11 @@ int main(int argc, char* argv[]) {
 
                     // Auto-detect format from magic bytes when Content-Type is generic
                     // (Roon sends no Content-Type, falling back to application/octet-stream)
-                    if (headerLen >= 4 && (contentType == "application/octet-stream" ||
-                                           contentType.empty())) {
+                    // Skip magic bytes when format=p (raw PCM) — PCM samples can
+                    // accidentally match MP3 sync (0xFF 0xE0+) and cause false detection
+                    if (formatCode != 'p' && headerLen >= 4 &&
+                        (contentType == "application/octet-stream" ||
+                         contentType.empty())) {
                         if (headerBuf[0] == 'f' && headerBuf[1] == 'L' &&
                             headerBuf[2] == 'a' && headerBuf[3] == 'C') {
                             contentType = "audio/flac";
