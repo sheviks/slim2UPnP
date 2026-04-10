@@ -35,7 +35,7 @@
 #include <unistd.h>
 #include <poll.h>
 
-#define SLIM2UPNP_VERSION "0.1.8-beta"
+#define SLIM2UPNP_VERSION "0.1.9-beta"
 
 // ============================================
 // Globals
@@ -606,11 +606,24 @@ int main(int argc, char* argv[]) {
                         LOG_INFO("[Gapless] Preparing slot " << nextSlot);
                     }
 
-                    // Configure passthrough MIME type and ring buffer
+                    // Configure passthrough MIME type and ring buffer.
+                    // For raw PCM (format=p), we know the exact format from strm-s,
+                    // so use the real values upfront — avoids a second setFormat
+                    // after prebuffer which would reset ring buffer positions and
+                    // cause a byte misalignment (→ white noise on 24-bit).
                     AudioHttpServer::AudioFormat audioFmt{};
-                    audioFmt.sampleRate = 44100;  // Default for ring buffer sizing
-                    audioFmt.bitDepth = 24;
-                    audioFmt.channels = 2;
+                    if (formatCode == 'p') {
+                        uint32_t sr = sampleRateFromCode(pcmRate);
+                        uint32_t bd = sampleSizeFromCode(pcmSize);
+                        uint32_t ch = (pcmChannels == '2') ? 2 : (pcmChannels == '1') ? 1 : 2;
+                        audioFmt.sampleRate = sr ? sr : 44100;
+                        audioFmt.bitDepth = bd ? bd : 16;
+                        audioFmt.channels = ch;
+                    } else {
+                        audioFmt.sampleRate = 44100;  // Default for compressed formats
+                        audioFmt.bitDepth = 24;
+                        audioFmt.channels = 2;
+                    }
                     audioServerPtr->setFormat(audioFmt);
                     audioServerPtr->setPassthroughMime(contentType);
 
@@ -684,25 +697,16 @@ int main(int argc, char* argv[]) {
                         }
                     }
 
-                    // Fallback for raw PCM: use strm-s format code + generate WAV header
-                    // Roon sends raw PCM without RIFF header or Content-Type
+                    // Raw PCM (format=p): the format was already set upfront
+                    // before prebuffer, so we only need to switch MIME to WAV
+                    // generation mode (clear passthrough MIME).
                     if (contentType == "application/octet-stream" && formatCode == 'p') {
-                        uint32_t sr = sampleRateFromCode(pcmRate);
-                        uint32_t bd = sampleSizeFromCode(pcmSize);
-                        uint32_t ch = (pcmChannels == '2') ? 2 : (pcmChannels == '1') ? 1 : 2;
-                        if (sr == 0) sr = 44100;
-                        if (bd == 0) bd = 16;
-
-                        AudioHttpServer::AudioFormat pcmFmt{};
-                        pcmFmt.sampleRate = sr;
-                        pcmFmt.bitDepth = bd;
-                        pcmFmt.channels = ch;
-                        audioServerPtr->setFormat(pcmFmt);
-                        // Clear passthrough MIME → AudioHttpServer will generate WAV header
                         audioServerPtr->setPassthroughMime("");
                         contentType = "audio/wav";
-                        LOG_INFO("[Audio] Raw PCM detected (format=p), "
-                                 "serving as WAV (" << sr << "Hz/" << bd << "bit/" << ch << "ch)");
+                        LOG_INFO("[Audio] Raw PCM (format=p), serving as WAV ("
+                                 << audioFmt.sampleRate << "Hz/"
+                                 << audioFmt.bitDepth << "bit/"
+                                 << audioFmt.channels << "ch)");
                     }
 
                     // Parse track duration from stream header

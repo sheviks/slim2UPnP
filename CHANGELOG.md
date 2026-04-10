@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.9-beta] - 2026-04-10
+
+### Fixed
+- **Roon raw PCM white noise at 24-bit**: when playing raw PCM from Roon (format=p), `setFormat()` was called twice — first with a default 44100Hz for ring buffer sizing, then with the real rate after prebuffer. The second call reset ring buffer positions, causing the 256KB of prebuffered data to be effectively lost. The producer continued writing at position 0, but the HTTP stream cursor had advanced 256KB, creating a byte misalignment. At 24-bit stereo (6 bytes/frame), 262144 bytes is not a multiple of 6 → samples were misaligned by 4 bytes → white noise. Now the format is set upfront from strm-s parameters for raw PCM, avoiding the second setFormat and the position reset.
+
+### Added
+- `pcmEndian` field now logged in strm-s messages for diagnostics
+
+### Changed
+- Version updated to 0.1.9-beta
+
 ## [0.1.8-beta] - 2026-04-06
 
 ### Fixed
