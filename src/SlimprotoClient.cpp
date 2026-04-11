@@ -434,10 +434,12 @@ void SlimprotoClient::sendStat(const char eventCode[4], uint32_t serverTimestamp
     stat.streamBufSize = htonl(m_streamBufSize.load(std::memory_order_relaxed));
     stat.streamBufFull = htonl(m_streamBufFull.load(std::memory_order_relaxed));
 
-    // Don't report real bytesReceived — we download much faster than real-time
-    // which confuses LMS position tracking. Send 0 so LMS uses elapsed instead.
-    stat.bytesRecvHi = 0;
-    stat.bytesRecvLo = 0;
+    // Report real bytesReceived (Squeezelite-compatible). Roon uses this value
+    // to verify the player is actively receiving data. Reporting 0 caused Roon
+    // to abort streams around 2 minutes thinking the player was stalled.
+    uint64_t bytesRecv = m_bytesReceived.load(std::memory_order_relaxed);
+    stat.bytesRecvHi = htonl(static_cast<uint32_t>(bytesRecv >> 32));
+    stat.bytesRecvLo = htonl(static_cast<uint32_t>(bytesRecv & 0xFFFFFFFF));
 
     stat.signalStrength = htons(0xFFFF);  // Wired connection
     stat.jiffies = htonl(getJiffies());
