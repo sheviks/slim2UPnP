@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.16-beta] - 2026-04-12
+
+### Added
+- **Clang + LTO build support**: build with `sudo LLVM=1 ./install.sh --build` for Clang with Link-Time Optimization. CMakeLists.txt adds `ENABLE_LTO` option using CMake's IPO support. install.sh detects `LLVM=1`, checks for clang/clang++, and falls back to GCC with a warning if not installed. Same `LLVM=1` convention as DirettaRendererUPnP. (Inspired by shevick PR #64)
+
+### Changed
+- Version updated to 0.1.16-beta
+
 ## [0.1.15-beta] - 2026-04-12
 
 ### Fixed
