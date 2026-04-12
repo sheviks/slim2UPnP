@@ -35,7 +35,7 @@
 #include <unistd.h>
 #include <poll.h>
 
-#define SLIM2UPNP_VERSION "0.1.12-beta"
+#define SLIM2UPNP_VERSION "0.1.13-beta"
 
 // ============================================
 // Globals
@@ -591,6 +591,12 @@ int main(int argc, char* argv[]) {
                     thisGeneration, formatCode, pcmRate, pcmSize, pcmChannels,
                     servers, &currentSlot, upnpPtr, &config]() {
 
+                    // Mutable copies of format params (updated on gapless chain)
+                    char fmtCode = formatCode;
+                    char pRate = pcmRate;
+                    char pSize = pcmSize;
+                    char pChannels = pcmChannels;
+
                     // Local pointer to active server
                     AudioHttpServer* audioServerPtr = servers[currentSlot.load()];
 
@@ -624,10 +630,10 @@ int main(int argc, char* argv[]) {
                     // after prebuffer which would reset ring buffer positions and
                     // cause a byte misalignment (→ white noise on 24-bit).
                     AudioHttpServer::AudioFormat audioFmt{};
-                    if (formatCode == 'p') {
-                        uint32_t sr = sampleRateFromCode(pcmRate);
-                        uint32_t bd = sampleSizeFromCode(pcmSize);
-                        uint32_t ch = (pcmChannels == '2') ? 2 : (pcmChannels == '1') ? 1 : 2;
+                    if (fmtCode == 'p') {
+                        uint32_t sr = sampleRateFromCode(pRate);
+                        uint32_t bd = sampleSizeFromCode(pSize);
+                        uint32_t ch = (pChannels == '2') ? 2 : (pChannels == '1') ? 1 : 2;
                         audioFmt.sampleRate = sr ? sr : 44100;
                         audioFmt.bitDepth = bd ? bd : 16;
                         audioFmt.channels = ch;
@@ -675,7 +681,7 @@ int main(int argc, char* argv[]) {
                     // (Roon sends no Content-Type, falling back to application/octet-stream)
                     // Skip magic bytes when format=p (raw PCM) — PCM samples can
                     // accidentally match MP3 sync (0xFF 0xE0+) and cause false detection
-                    if (formatCode != 'p' && headerLen >= 4 &&
+                    if (fmtCode != 'p' && headerLen >= 4 &&
                         (contentType == "application/octet-stream" ||
                          contentType.empty())) {
                         if (headerBuf[0] == 'f' && headerBuf[1] == 'L' &&
@@ -712,7 +718,7 @@ int main(int argc, char* argv[]) {
                     // Raw PCM (format=p): the format was already set upfront
                     // before prebuffer, so we only need to switch MIME to WAV
                     // generation mode (clear passthrough MIME).
-                    if (contentType == "application/octet-stream" && formatCode == 'p') {
+                    if (contentType == "application/octet-stream" && fmtCode == 'p') {
                         audioServerPtr->setPassthroughMime("");
                         contentType = "audio/wav";
                         LOG_INFO("[Audio] Raw PCM (format=p), serving as WAV ("
@@ -903,6 +909,12 @@ int main(int argc, char* argv[]) {
                             LOG_INFO("[Gapless] Chaining to next track");
                             httpStream->disconnect();
                             httpStream = next->httpClient;
+
+                            // Update format parameters from the new track's strm-s
+                            fmtCode = next->formatCode;
+                            pRate = next->pcmSampleRate;
+                            pSize = next->pcmSampleSize;
+                            pChannels = next->pcmChannels;
 
                             // Send RESP/STMh for new track
                             slimproto->sendStat(StatEvent::STMc);

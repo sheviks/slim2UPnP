@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.13-beta] - 2026-04-12
+
+### Fixed
+- **Gapless cross-format transitions broken** (Qobuz → local or vice versa): format parameters (`formatCode`, `pcmRate`, `pcmSize`, `pcmChannels`) were captured by value in the audio thread lambda and never updated on gapless chain. When transitioning from FLAC to WAV (or PCM), the audio thread still used the first track's format code, causing incorrect format handling for the second track. Now the format parameters are updated from the PendingTrack when chaining. (Reported by Dominique)
+
+### Changed
+- Version updated to 0.1.13-beta
+
 ## [0.1.12-beta] - 2026-04-11
 
 ### Fixed
