@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.14-beta] - 2026-04-12
+
+### Fixed
+- **Gapless transition fails between Qobuz and local files**: DirettaRendererUPnP uses "anticipated preload" to probe the next track's format — it opens a short-lived HTTP connection, reads a few KB, then closes. This consumed data from the ring buffer (including the WAV/FLAC header). When the real playback connection arrived, the header was gone and the renderer rejected the stream ("Connection reset by peer"). Now the ring buffer read position is restored when a client disconnects prematurely, so the next client gets the full stream from the beginning. (Reported by Dominique)
+
+### Changed
+- Version updated to 0.1.14-beta
+
 ## [0.1.13-beta] - 2026-04-12
 
 ### Fixed
