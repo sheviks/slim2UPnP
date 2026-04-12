@@ -35,7 +35,7 @@
 #include <unistd.h>
 #include <poll.h>
 
-#define SLIM2UPNP_VERSION "0.1.16-beta"
+#define SLIM2UPNP_VERSION "0.1.17-beta"
 
 // ============================================
 // Globals
@@ -827,72 +827,40 @@ int main(int argc, char* argv[]) {
                         LOG_INFO("[Audio] HTTP complete: " << totalBytes
                                  << " bytes, duration=" << trackDurationSec << "s");
 
-                        // Wait until wall clock reaches near track end
-                        constexpr uint32_t STMD_LEAD_SEC = 3;
-                        std::chrono::steady_clock::time_point drainStartTime{};
-                        std::chrono::steady_clock::time_point lastTransportPoll{};
-                        uint32_t stmdTargetSec = (trackDurationSec > STMD_LEAD_SEC)
-                            ? trackDurationSec - STMD_LEAD_SEC : 0;
+                        // Duration unknown (WAV streaming, no Content-Length):
+                        // Send STMd immediately so LMS queues next track ASAP.
+                        // The renderer still has buffered audio to play while LMS prepares.
+                        // Waiting for STOPPED first is too late — the renderer releases
+                        // the Diretta target before the next track can be queued.
+                        if (trackDurationSec == 0) {
+                            LOG_INFO("[Audio] Unknown duration — sending STMd early "
+                                     "to trigger next track from LMS");
+                        } else {
+                            // Known duration: wait until wall clock reaches near track end
+                            constexpr uint32_t STMD_LEAD_SEC = 3;
+                            uint32_t stmdTargetSec = (trackDurationSec > STMD_LEAD_SEC)
+                                ? trackDurationSec - STMD_LEAD_SEC : 0;
 
-                        while (audioTestRunning.load(std::memory_order_acquire)) {
-                            auto now = std::chrono::steady_clock::now();
-                            uint32_t elapsedMs = static_cast<uint32_t>(
-                                std::chrono::duration_cast<std::chrono::milliseconds>(
-                                    now - playStartTime).count());
-                            uint32_t elapsedSec = elapsedMs / 1000;
-                            slimproto->updateElapsed(elapsedSec, elapsedMs);
+                            while (audioTestRunning.load(std::memory_order_acquire)) {
+                                auto now = std::chrono::steady_clock::now();
+                                uint32_t elapsedMs = static_cast<uint32_t>(
+                                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                                        now - playStartTime).count());
+                                uint32_t elapsedSec = elapsedMs / 1000;
+                                slimproto->updateElapsed(elapsedSec, elapsedMs);
 
-                            if (elapsedSec >= lastElapsedLog + 10) {
-                                lastElapsedLog = elapsedSec;
-                                LOG_DEBUG("[Audio] Elapsed: " << elapsedSec
-                                          << "s (waiting for track end)");
-                            }
-
-                            // If we know the duration, wait for wall clock
-                            if (trackDurationSec > 0 && elapsedSec >= stmdTargetSec) {
-                                break;
-                            }
-
-                            // Duration unknown: wait for renderer to consume data,
-                            // then poll renderer transport state until it stops.
-                            if (trackDurationSec == 0) {
-                                uint64_t served = audioServerPtr->getBytesServed();
-                                bool dataConsumed = (served + 4096 >= totalBytes) ||
-                                                    !audioServerPtr->isClientConnected();
-                                if (dataConsumed && drainStartTime.time_since_epoch().count() == 0) {
-                                    drainStartTime = std::chrono::steady_clock::now();
-                                    lastTransportPoll = drainStartTime;
-                                    LOG_INFO("[Audio] Renderer has all data, "
-                                             "polling transport state...");
+                                if (elapsedSec >= lastElapsedLog + 10) {
+                                    lastElapsedLog = elapsedSec;
+                                    LOG_DEBUG("[Audio] Elapsed: " << elapsedSec
+                                              << "s (waiting for track end)");
                                 }
-                                if (drainStartTime.time_since_epoch().count() != 0) {
-                                    auto now2 = std::chrono::steady_clock::now();
-                                    auto drainElapsed = std::chrono::duration_cast<
-                                        std::chrono::seconds>(now2 - drainStartTime).count();
-                                    // Poll renderer transport state every 2s
-                                    auto sincePoll = std::chrono::duration_cast<
-                                        std::chrono::seconds>(now2 - lastTransportPoll).count();
-                                    if (sincePoll >= 2) {
-                                        lastTransportPoll = now2;
-                                        std::string state = upnpPtr->getTransportState();
-                                        LOG_DEBUG("[Audio] Transport state: " << state
-                                                  << " (drain " << drainElapsed << "s)");
-                                        if (state == "STOPPED" || state == "NO_MEDIA_PRESENT") {
-                                            LOG_INFO("[Audio] Renderer stopped after "
-                                                     << drainElapsed << "s drain");
-                                            break;
-                                        }
-                                    }
-                                    // Safety timeout: 5 minutes max
-                                    if (drainElapsed >= 300) {
-                                        LOG_WARN("[Audio] Drain timeout (300s), "
-                                                 "forcing STMd");
-                                        break;
-                                    }
-                                }
-                            }
 
-                            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                                if (elapsedSec >= stmdTargetSec) {
+                                    break;
+                                }
+
+                                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                            }
                         }
 
                         auto now = std::chrono::steady_clock::now();

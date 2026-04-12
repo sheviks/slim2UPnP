@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.17-beta] - 2026-04-12
+
+### Fixed
+- **Gapless broken on large WAV files with unknown duration (ultra hi-res 705.6/768 kHz)**: When the track duration was unknown (WAV streaming without Content-Length), slim2UPnP waited for the renderer's transport state to reach STOPPED before sending STMd. By that time, the renderer had already released the Diretta target, and the next track's `SetNextAVTransportURI` arrived too late for a clean gapless transition. Now sends STMd immediately after HTTP EOF when duration is unknown, so LMS queues the next track while the renderer still has buffered audio to play. (Reported by abase/Heinz)
+
+---
+
 ## [0.1.16-beta] - 2026-04-12
 
 ### Added
