@@ -197,7 +197,9 @@ download_binary() {
             checksums="$(wget -qO- "$checksum_url")"
         fi
 
-        local expected_hash="$(echo "$checksums" | grep "$binary_file" | awk '{print $1}')"
+        # Exact-match the filename at end-of-line to avoid matching
+        # slim2upnp-x64-v3 against slim2upnp-x64-v3-clang-lto too.
+        local expected_hash="$(echo "$checksums" | awk -v f="$binary_file" '$2 == f {print $1}')"
         if [ -n "$expected_hash" ]; then
             local actual_hash="$(sha256sum "$tmp_dir/$binary_file" | awk '{print $1}')"
             if [ "$expected_hash" = "$actual_hash" ]; then
