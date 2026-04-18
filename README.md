@@ -88,6 +88,7 @@ UPnP Renderer:
 Audio:
   --max-rate <hz>          Max sample rate (default: 1536000)
   --no-dsd                 Disable DSD support
+  --no-play-calibration    Disable renderer PLAYING-state elapsed calibration
 
 Logging:
   -v, --verbose            Debug output

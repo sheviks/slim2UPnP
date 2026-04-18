@@ -7,6 +7,7 @@
 
 ### Fixed
 - **Track tail truncated with Roon (raw PCM, format=p)**: Roon pre-buffers audio ahead of real-time, so HTTP EOF arrived 15-20s before the renderer had finished playing. With `trackDurationSec == 0`, STMd was sent immediately on EOF, Roon replied with `strm-q` (stop — Roon doesn't use Slimproto gapless), and the UPnP Stop call forced the renderer to drop its remaining buffer. Now the actual duration is computed from `totalBytes / (sampleRate × channels × bytesPerSample)` for raw PCM, so STMd waits until near real track end. (Reported by Progman)
+- **Erratic Roon/LMS progress bar at track start**: The elapsed clock was started on the `Play()` SOAP call, but the renderer takes 1-5s to actually start playing (SOAP processing, HTTP connect, prebuffer, DAC ramp-up). Now slim2UPnP polls `GetTransportInfo` every 150ms after Play until the renderer reports `PLAYING`, then recalibrates the elapsed clock to that moment. Only `GetTransportInfo` is used (just the transport state string) — no `GetPositionInfo` polling, so no risk of flooding or erratic values with DirettaRendererUPnP. Can be disabled with `--no-play-calibration`. (Reported by Progman)
 
 ### Changed
 - Version updated to 0.1.20-beta

@@ -136,7 +136,7 @@ Key messages: HELO (registration), STAT (status), strm (stream control), audg (v
 ### Passthrough
 - **Content-Type mapping is critical** — LMS sends `audio/flac`, `audio/x-wav`, `application/octet-stream` etc.; must map to correct MIME type for SetAVTransportURI
 - **FLAC/DSF header parsing for duration only** — do NOT decode, just read metadata for STMd timing
-- **Wall clock elapsed** — use `std::chrono::steady_clock` since there are no decoded samples to count
+- **Wall clock elapsed** — use `std::chrono::steady_clock` since there are no decoded samples to count. Calibrated against `GetTransportInfo` once per track: poll every 150ms after `Play()` until state == "PLAYING", then reset the start time to that moment. Corrects the 1-5s drift caused by renderer startup latency (buffering, DAC ramp-up). Disabled with `--no-play-calibration`.
 
 ### Raw PCM from Roon (format=p)
 - **Roon sends raw PCM with no Content-Type** (`application/octet-stream`) and no WAV header when FLAC compression is disabled

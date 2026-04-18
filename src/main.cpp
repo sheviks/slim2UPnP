@@ -181,6 +181,9 @@ Config parseArguments(int argc, char* argv[]) {
         else if (arg == "--no-dsd") {
             config.dsdEnabled = false;
         }
+        else if (arg == "--no-play-calibration") {
+            config.calibrateElapsed = false;
+        }
         else if (arg == "--list-renderers" || arg == "-l") {
             config.listRenderers = true;
         }
@@ -214,6 +217,7 @@ Config parseArguments(int argc, char* argv[]) {
                       << "Audio:\n"
                       << "  --max-rate <hz>        Max sample rate (default: 1536000)\n"
                       << "  --no-dsd               Disable DSD support\n"
+                      << "  --no-play-calibration  Disable renderer PLAYING-state elapsed calibration\n"
                       << "\n"
                       << "Logging:\n"
                       << "  -v, --verbose          Debug output (log level: DEBUG)\n"
@@ -742,6 +746,13 @@ int main(int argc, char* argv[]) {
                                        !prevContentType.empty() &&
                                        prevContentType != contentType;
 
+                    // Elapsed clock — atomic so the PLAYING-state calibration thread
+                    // can recalibrate it once the renderer actually starts playing.
+                    // Stored as nanoseconds since steady_clock epoch (lock-free on x86/aarch64).
+                    std::atomic<int64_t> playStartNs{
+                        std::chrono::steady_clock::now().time_since_epoch().count()
+                    };
+
                     if (firstTrack || crossFormat) {
                         // Cold start (or cross-format restart):
                         // Stop + SetAVTransportURI + Play.
@@ -758,12 +769,43 @@ int main(int argc, char* argv[]) {
                             upnpPtr->stop();
                             currentSlot.store(1 - oldSlot);
                         }
+                        bool doCalibrate = config.calibrateElapsed;
                         std::thread([upnpPtr, audioServerPtr, &slimproto,
-                                     &streamGeneration, thisGeneration]() {
+                                     &streamGeneration, thisGeneration,
+                                     &playStartNs, doCalibrate]() {
                             upnpPtr->setAVTransportURI(audioServerPtr->getStreamURL());
-                            if (streamGeneration.load() == thisGeneration) {
-                                upnpPtr->play();
-                                slimproto->sendStat(StatEvent::STMl);
+                            if (streamGeneration.load() != thisGeneration) return;
+                            upnpPtr->play();
+                            slimproto->sendStat(StatEvent::STMl);
+
+                            // Poll GetTransportInfo until PLAYING, then recalibrate
+                            // the elapsed clock. Corrects the 1-5s drift caused by
+                            // renderer startup latency (SetAVTransportURI processing,
+                            // HTTP connect, prebuffer, DAC ramp-up).
+                            if (!doCalibrate) return;
+                            auto pollStart = std::chrono::steady_clock::now();
+                            constexpr int POLL_TIMEOUT_MS = 10000;
+                            constexpr int POLL_INTERVAL_MS = 150;
+                            while (streamGeneration.load() == thisGeneration) {
+                                auto elapsedMs = std::chrono::duration_cast<
+                                    std::chrono::milliseconds>(
+                                    std::chrono::steady_clock::now() - pollStart).count();
+                                if (elapsedMs >= POLL_TIMEOUT_MS) {
+                                    LOG_DEBUG("[UPnP] PLAYING-state poll timed out");
+                                    break;
+                                }
+                                std::this_thread::sleep_for(
+                                    std::chrono::milliseconds(POLL_INTERVAL_MS));
+                                std::string state = upnpPtr->getTransportState();
+                                if (state == "PLAYING") {
+                                    playStartNs.store(
+                                        std::chrono::steady_clock::now()
+                                            .time_since_epoch().count(),
+                                        std::memory_order_release);
+                                    LOG_INFO("[UPnP] Renderer PLAYING after "
+                                             << elapsedMs << "ms — elapsed clock recalibrated");
+                                    break;
+                                }
                             }
                         }).detach();
                     } else {
@@ -782,8 +824,17 @@ int main(int argc, char* argv[]) {
                     prevContentType = contentType;
 
                     // --- Stream loop: read HTTP → write to ring buffer ---
-                    auto playStartTime = std::chrono::steady_clock::now();
                     uint32_t lastElapsedLog = 0;
+
+                    // Lambda reads playStartNs so calibration updates take effect
+                    auto computeElapsedMs = [&playStartNs]() -> uint32_t {
+                        int64_t nowNs = std::chrono::steady_clock::now()
+                            .time_since_epoch().count();
+                        int64_t startNs = playStartNs.load(std::memory_order_acquire);
+                        int64_t diffNs = nowNs - startNs;
+                        if (diffNs < 0) diffNs = 0;
+                        return static_cast<uint32_t>(diffNs / 1'000'000);
+                    };
 
                     while (audioTestRunning.load(std::memory_order_acquire) && !httpEof) {
                         ssize_t n = httpStream->readWithTimeout(httpBuf, sizeof(httpBuf), 10);
@@ -803,11 +854,9 @@ int main(int argc, char* argv[]) {
                             static_cast<uint32_t>(audioServerPtr->getBufferUsed()),
                             0, 0);
 
-                        // Update elapsed via wall clock since Play
-                        auto now = std::chrono::steady_clock::now();
-                        uint32_t elapsedMs = static_cast<uint32_t>(
-                            std::chrono::duration_cast<std::chrono::milliseconds>(
-                                now - playStartTime).count());
+                        // Update elapsed via wall clock since Play (recalibrated
+                        // to the renderer's actual PLAYING state if calibration ran)
+                        uint32_t elapsedMs = computeElapsedMs();
                         uint32_t elapsedSec = elapsedMs / 1000;
                         slimproto->updateElapsed(elapsedSec, elapsedMs);
 
@@ -862,10 +911,7 @@ int main(int argc, char* argv[]) {
                                 ? trackDurationSec - STMD_LEAD_SEC : 0;
 
                             while (audioTestRunning.load(std::memory_order_acquire)) {
-                                auto now = std::chrono::steady_clock::now();
-                                uint32_t elapsedMs = static_cast<uint32_t>(
-                                    std::chrono::duration_cast<std::chrono::milliseconds>(
-                                        now - playStartTime).count());
+                                uint32_t elapsedMs = computeElapsedMs();
                                 uint32_t elapsedSec = elapsedMs / 1000;
                                 slimproto->updateElapsed(elapsedSec, elapsedMs);
 
@@ -883,10 +929,7 @@ int main(int argc, char* argv[]) {
                             }
                         }
 
-                        auto now = std::chrono::steady_clock::now();
-                        uint32_t finalElapsed = static_cast<uint32_t>(
-                            std::chrono::duration_cast<std::chrono::seconds>(
-                                now - playStartTime).count());
+                        uint32_t finalElapsed = computeElapsedMs() / 1000;
                         LOG_INFO("[Audio] STMd at " << finalElapsed << "s (track="
                                  << trackDurationSec << "s)");
                         slimproto->sendStat(StatEvent::STMd);

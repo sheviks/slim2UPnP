@@ -30,6 +30,7 @@ struct Config {
     // Audio
     int maxSampleRate = 1536000;
     bool dsdEnabled = true;
+    bool calibrateElapsed = true;       // poll GetTransportInfo at start to align elapsed clock with renderer PLAYING state
 
     // Logging
     bool verbose = false;
