@@ -44,7 +44,7 @@ jobs:
             desc: "x86_64 AVX2, Clang + LTO"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Build static binary in Alpine container (${{ matrix.variant }})
         run: |
@@ -131,7 +131,7 @@ jobs:
         run: cp build/slim2upnp slim2upnp-${{ matrix.variant }}
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: slim2upnp-${{ matrix.variant }}
           path: slim2upnp-${{ matrix.variant }}
@@ -153,7 +153,7 @@ jobs:
             desc: "ARM64, Clang + LTO"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up QEMU for ARM64 emulation
         uses: docker/setup-qemu-action@v3
@@ -235,7 +235,7 @@ jobs:
         run: cp build/slim2upnp slim2upnp-${{ matrix.variant }}
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: slim2upnp-${{ matrix.variant }}
           path: slim2upnp-${{ matrix.variant }}
@@ -249,10 +249,10 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 
@@ -277,7 +277,7 @@ jobs:
         run: echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: "slim2UPnP ${{ steps.version.outputs.version }}"
           body: |
