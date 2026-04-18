@@ -146,6 +146,37 @@ def restart_service(service_name):
     return False, 'No init system found (neither systemctl nor rc-service).'
 
 
+def stop_service(service_name):
+    """Stop a service (systemd or OpenRC). Returns (success, message)."""
+    # Try systemd first
+    if shutil.which('systemctl'):
+        try:
+            result = subprocess.run(
+                ['systemctl', 'stop', service_name],
+                capture_output=True, text=True, timeout=15
+            )
+            if result.returncode == 0:
+                return True, f'Service {service_name} stopped (systemd).'
+            return False, f'Stop failed: {result.stderr.strip()}'
+        except subprocess.TimeoutExpired:
+            return False, 'Stop timed out (15s).'
+
+    # Try OpenRC (GentooPlayer, Gentoo, Alpine)
+    if shutil.which('rc-service'):
+        try:
+            result = subprocess.run(
+                ['rc-service', service_name, 'stop'],
+                capture_output=True, text=True, timeout=15
+            )
+            if result.returncode == 0:
+                return True, f'Service {service_name} stopped (OpenRC).'
+            return False, f'Stop failed: {result.stderr.strip()}'
+        except subprocess.TimeoutExpired:
+            return False, 'Stop timed out (15s).'
+
+    return False, 'No init system found (neither systemctl nor rc-service).'
+
+
 def render_setting_input(setting, current_value):
     """Render an HTML input element for a single setting."""
     key = setting['key']
@@ -331,6 +362,8 @@ class ConfigHandler(BaseHTTPRequestHandler):
             self._handle_save(form)
         elif self.path == '/restart':
             self._handle_restart()
+        elif self.path == '/stop':
+            self._handle_stop()
         else:
             self._send_redirect('/')
 
@@ -404,6 +437,19 @@ class ConfigHandler(BaseHTTPRequestHandler):
             return
 
         ok, msg = restart_service(service)
+        if ok:
+            self._send_redirect(f'/?ok={msg}')
+        else:
+            self._send_redirect(f'/?err={msg}')
+
+    def _handle_stop(self):
+        """Stop service (releases Diretta target for other players)."""
+        service = self.profile.get('service_name', '')
+        if not service:
+            self._send_redirect('/?err=No service configured.')
+            return
+
+        ok, msg = stop_service(service)
         if ok:
             self._send_redirect(f'/?ok={msg}')
         else:
