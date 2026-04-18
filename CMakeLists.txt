@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(slim2upnp VERSION 0.1.21)
+project(slim2upnp VERSION 0.1.22)
 
 set(CMAKE_CXX_STANDARD 17)
 
@@ -158,66 +158,31 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Link-Time Optimization (LTO)
 # LTO_MODE: OFF (default), thin, full
+#
+# We use manual -flto flags rather than CMake's INTERPROCEDURAL_OPTIMIZATION
+# because CMake's IPO validation builds a test static library, which fails
+# with "CMAKE_CXX_COMPILER_AR-NOTFOUND" on distros where only clang is
+# installed without the llvm tools package (Fedora, Arch). slim2UPnP only
+# produces an executable — no static libraries — so llvm-ar is never
+# actually needed for our build.
 set(LTO_MODE "OFF" CACHE STRING "LTO mode: OFF, thin, full")
-if(NOT LTO_MODE STREQUAL "OFF")
-    # With Clang, point CMake at llvm-ar/llvm-ranlib. GNU binutils ar can't
-    # read LLVM bitcode, which makes CMake's IPO check fail on Fedora/Arch
-    # with "CMAKE_CXX_COMPILER_AR-NOTFOUND" and silently disables LTO.
+if(LTO_MODE STREQUAL "thin")
     if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-        # Ask Clang directly — handles versioned names (llvm-ar-18) and
-        # non-standard install paths (/usr/lib/llvm-18/bin/llvm-ar).
-        execute_process(
-            COMMAND ${CMAKE_CXX_COMPILER} -print-prog-name=llvm-ar
-            OUTPUT_VARIABLE LLVM_AR
-            OUTPUT_STRIP_TRAILING_WHITESPACE)
-        execute_process(
-            COMMAND ${CMAKE_CXX_COMPILER} -print-prog-name=llvm-ranlib
-            OUTPUT_VARIABLE LLVM_RANLIB
-            OUTPUT_STRIP_TRAILING_WHITESPACE)
-        # Clang returns the bare name unchanged if not found — check it's a real path
-        if(LLVM_AR AND EXISTS "${LLVM_AR}")
-            set(CMAKE_AR "${LLVM_AR}" CACHE FILEPATH "llvm-ar for LTO" FORCE)
-            set(CMAKE_CXX_COMPILER_AR "${LLVM_AR}" CACHE FILEPATH "llvm-ar for LTO" FORCE)
-        else()
-            # Fallback: search PATH (versioned and unversioned)
-            find_program(LLVM_AR_FALLBACK
-                NAMES llvm-ar llvm-ar-20 llvm-ar-19 llvm-ar-18 llvm-ar-17)
-            if(LLVM_AR_FALLBACK)
-                set(CMAKE_AR "${LLVM_AR_FALLBACK}" CACHE FILEPATH "llvm-ar for LTO" FORCE)
-                set(CMAKE_CXX_COMPILER_AR "${LLVM_AR_FALLBACK}" CACHE FILEPATH "llvm-ar for LTO" FORCE)
-            else()
-                message(WARNING "llvm-ar not found — Clang LTO may fail. Install the 'llvm' package.")
-            endif()
-        endif()
-        if(LLVM_RANLIB AND EXISTS "${LLVM_RANLIB}")
-            set(CMAKE_RANLIB "${LLVM_RANLIB}" CACHE FILEPATH "llvm-ranlib for LTO" FORCE)
-            set(CMAKE_CXX_COMPILER_RANLIB "${LLVM_RANLIB}" CACHE FILEPATH "llvm-ranlib for LTO" FORCE)
-        else()
-            find_program(LLVM_RANLIB_FALLBACK
-                NAMES llvm-ranlib llvm-ranlib-20 llvm-ranlib-19 llvm-ranlib-18 llvm-ranlib-17)
-            if(LLVM_RANLIB_FALLBACK)
-                set(CMAKE_RANLIB "${LLVM_RANLIB_FALLBACK}" CACHE FILEPATH "llvm-ranlib for LTO" FORCE)
-                set(CMAKE_CXX_COMPILER_RANLIB "${LLVM_RANLIB_FALLBACK}" CACHE FILEPATH "llvm-ranlib for LTO" FORCE)
-            endif()
-        endif()
-    endif()
-
-    if(LTO_MODE STREQUAL "thin")
-        include(CheckIPOSupported)
-        check_ipo_supported(RESULT LTO_SUPPORTED OUTPUT LTO_ERROR)
-        if(LTO_SUPPORTED)
-            set_property(TARGET slim2upnp PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
-            message(STATUS "LTO: ThinLTO (via CMake IPO)")
-        else()
-            message(WARNING "ThinLTO requested but not supported: ${LTO_ERROR}")
-        endif()
-    elseif(LTO_MODE STREQUAL "full")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -flto=thin")
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -flto=thin")
+        message(STATUS "LTO: ThinLTO (Clang -flto=thin)")
+    else()
+        # GCC doesn't support ThinLTO — fall back to regular LTO
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -flto")
         set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -flto")
-        message(STATUS "LTO: Full LTO (manual flags)")
-    else()
-        message(WARNING "Unknown LTO_MODE '${LTO_MODE}' — use OFF, thin, or full")
+        message(STATUS "LTO: Full LTO (GCC: ThinLTO unsupported, using -flto)")
     endif()
+elseif(LTO_MODE STREQUAL "full")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -flto")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -flto")
+    message(STATUS "LTO: Full LTO (-flto)")
+elseif(NOT LTO_MODE STREQUAL "OFF")
+    message(WARNING "Unknown LTO_MODE '${LTO_MODE}' — use OFF, thin, or full")
 endif()
 
 # Linker selection (useful with Clang + LTO)

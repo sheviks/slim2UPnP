@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.22-beta] - 2026-04-18
+
+### Fixed
+- **Clang ThinLTO still broken on Fedora** (regression fix for v0.1.21-beta): the previous attempt set `CMAKE_CXX_COMPILER_AR` in the parent CMake cache, but CMake's IPO validation runs in a **subproject** with its own cache, so the setting didn't propagate. Switched to manual `-flto=thin` flags for Clang (and `-flto` for GCC, which doesn't support ThinLTO). This bypasses CMake IPO entirely — no test static library is built, so `llvm-ar` is never needed. Works out of the box on Fedora, Arch, Debian, Alpine, regardless of whether the `llvm` tools package is installed. slim2UPnP only produces an executable (no static libraries), so `llvm-ar` was never actually required for our build.
+
+### Changed
+- Version updated to 0.1.22-beta
+
 ## [0.1.21-beta] - 2026-04-18
 
 ### Fixed

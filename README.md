@@ -1,4 +1,4 @@
-# slim2UPnP v0.1.21 beta
+# slim2UPnP v0.1.22 beta
 
 Slimproto to UPnP bridge with native DSD support.
 
