@@ -5,6 +5,9 @@
 ### Added
 - **Web UI Stop button**: Added a Stop button alongside the existing Save & Restart and Restart Only buttons. Useful for users running slim2UPnP on their own Linux distributions to stop the service directly from the web UI. Supports both systemd and OpenRC. Includes a confirmation dialog.
 
+### Fixed
+- **Track tail truncated with Roon (raw PCM, format=p)**: Roon pre-buffers audio ahead of real-time, so HTTP EOF arrived 15-20s before the renderer had finished playing. With `trackDurationSec == 0`, STMd was sent immediately on EOF, Roon replied with `strm-q` (stop — Roon doesn't use Slimproto gapless), and the UPnP Stop call forced the renderer to drop its remaining buffer. Now the actual duration is computed from `totalBytes / (sampleRate × channels × bytesPerSample)` for raw PCM, so STMd waits until near real track end. (Reported by Progman)
+
 ### Changed
 - Version updated to 0.1.20-beta
 

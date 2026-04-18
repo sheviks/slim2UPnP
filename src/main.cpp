@@ -824,6 +824,26 @@ int main(int argc, char* argv[]) {
 
                     // --- Wait for track to nearly finish, then send STMd ---
                     if (httpEof && audioTestRunning.load(std::memory_order_acquire)) {
+                        // Raw PCM (format=p): compute actual duration from bytes.
+                        // Roon pre-buffers ahead of real-time, so HTTP EOF arrives
+                        // 15-20s before the renderer has finished playing. Without
+                        // a known duration, STMd would be sent immediately and Roon's
+                        // strm-q would trigger UPnP Stop, truncating the tail.
+                        if (trackDurationSec == 0 && fmtCode == 'p'
+                            && audioFmt.sampleRate > 0 && audioFmt.bitDepth > 0
+                            && audioFmt.channels > 0) {
+                            uint64_t bytesPerSec = static_cast<uint64_t>(audioFmt.sampleRate)
+                                                 * audioFmt.channels
+                                                 * (audioFmt.bitDepth / 8);
+                            if (bytesPerSec > 0) {
+                                trackDurationSec = static_cast<uint32_t>(totalBytes / bytesPerSec);
+                                LOG_INFO("[Audio] PCM duration computed: "
+                                         << trackDurationSec << "s ("
+                                         << totalBytes << " bytes / "
+                                         << bytesPerSec << " B/s)");
+                            }
+                        }
+
                         LOG_INFO("[Audio] HTTP complete: " << totalBytes
                                  << " bytes, duration=" << trackDurationSec << "s");
 
