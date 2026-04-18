@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.21-beta] - 2026-04-18
+
+### Fixed
+- **Clang LTO silently disabled on Fedora/Arch and Debian with versioned LLVM**: CMake's IPO check failed with `CMAKE_CXX_COMPILER_AR-NOTFOUND` because it defaulted to GNU binutils `ar`, which can't read LLVM bitcode. LTO was silently disabled even when `LLVM=1` was set. Now CMakeLists.txt asks Clang directly via `-print-prog-name` to locate `llvm-ar`/`llvm-ranlib` (handles both `/usr/bin/llvm-ar` and versioned paths like `/usr/lib/llvm-18/bin/llvm-ar`). Falls back to `find_program` with versioned candidates. (Reported by Dominique on Fedora 43)
+
+### Changed
+- Version updated to 0.1.21-beta
+
 ## [0.1.20-beta] - 2026-04-18
 
 ### Added
