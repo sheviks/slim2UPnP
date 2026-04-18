@@ -160,6 +160,48 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 # LTO_MODE: OFF (default), thin, full
 set(LTO_MODE "OFF" CACHE STRING "LTO mode: OFF, thin, full")
 if(NOT LTO_MODE STREQUAL "OFF")
+    # With Clang, point CMake at llvm-ar/llvm-ranlib. GNU binutils ar can't
+    # read LLVM bitcode, which makes CMake's IPO check fail on Fedora/Arch
+    # with "CMAKE_CXX_COMPILER_AR-NOTFOUND" and silently disables LTO.
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        # Ask Clang directly — handles versioned names (llvm-ar-18) and
+        # non-standard install paths (/usr/lib/llvm-18/bin/llvm-ar).
+        execute_process(
+            COMMAND ${CMAKE_CXX_COMPILER} -print-prog-name=llvm-ar
+            OUTPUT_VARIABLE LLVM_AR
+            OUTPUT_STRIP_TRAILING_WHITESPACE)
+        execute_process(
+            COMMAND ${CMAKE_CXX_COMPILER} -print-prog-name=llvm-ranlib
+            OUTPUT_VARIABLE LLVM_RANLIB
+            OUTPUT_STRIP_TRAILING_WHITESPACE)
+        # Clang returns the bare name unchanged if not found — check it's a real path
+        if(LLVM_AR AND EXISTS "${LLVM_AR}")
+            set(CMAKE_AR "${LLVM_AR}" CACHE FILEPATH "llvm-ar for LTO" FORCE)
+            set(CMAKE_CXX_COMPILER_AR "${LLVM_AR}" CACHE FILEPATH "llvm-ar for LTO" FORCE)
+        else()
+            # Fallback: search PATH (versioned and unversioned)
+            find_program(LLVM_AR_FALLBACK
+                NAMES llvm-ar llvm-ar-20 llvm-ar-19 llvm-ar-18 llvm-ar-17)
+            if(LLVM_AR_FALLBACK)
+                set(CMAKE_AR "${LLVM_AR_FALLBACK}" CACHE FILEPATH "llvm-ar for LTO" FORCE)
+                set(CMAKE_CXX_COMPILER_AR "${LLVM_AR_FALLBACK}" CACHE FILEPATH "llvm-ar for LTO" FORCE)
+            else()
+                message(WARNING "llvm-ar not found — Clang LTO may fail. Install the 'llvm' package.")
+            endif()
+        endif()
+        if(LLVM_RANLIB AND EXISTS "${LLVM_RANLIB}")
+            set(CMAKE_RANLIB "${LLVM_RANLIB}" CACHE FILEPATH "llvm-ranlib for LTO" FORCE)
+            set(CMAKE_CXX_COMPILER_RANLIB "${LLVM_RANLIB}" CACHE FILEPATH "llvm-ranlib for LTO" FORCE)
+        else()
+            find_program(LLVM_RANLIB_FALLBACK
+                NAMES llvm-ranlib llvm-ranlib-20 llvm-ranlib-19 llvm-ranlib-18 llvm-ranlib-17)
+            if(LLVM_RANLIB_FALLBACK)
+                set(CMAKE_RANLIB "${LLVM_RANLIB_FALLBACK}" CACHE FILEPATH "llvm-ranlib for LTO" FORCE)
+                set(CMAKE_CXX_COMPILER_RANLIB "${LLVM_RANLIB_FALLBACK}" CACHE FILEPATH "llvm-ranlib for LTO" FORCE)
+            endif()
+        endif()
+    endif()
+
     if(LTO_MODE STREQUAL "thin")
         include(CheckIPOSupported)
         check_ipo_supported(RESULT LTO_SUPPORTED OUTPUT LTO_ERROR)
