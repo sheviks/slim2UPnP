@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.1.20-beta] - 2026-04-17
+## [0.1.20-beta] - 2026-04-18
 
 ### Added
 - **Web UI Stop button**: Added a Stop button alongside the existing Save & Restart and Restart Only buttons. Useful for users running slim2UPnP on their own Linux distributions to stop the service directly from the web UI. Supports both systemd and OpenRC. Includes a confirmation dialog.
