@@ -35,7 +35,7 @@
 #include <unistd.h>
 #include <poll.h>
 
-#define SLIM2UPNP_VERSION "0.1.26-beta"
+#define SLIM2UPNP_VERSION "0.1.27-beta"
 
 // ============================================
 // Globals
@@ -680,15 +680,15 @@ int main(int argc, char* argv[]) {
                         audioFmt.channels = ch;
                     } else {
                         // Placeholder values — in passthrough the renderer decodes,
-                        // so these only size the ring buffer. Flag DSD so the buffer
-                        // uses the DSD multiplier and the log isn't misleading.
+                        // so these only size the ring buffer (PCM math: ~1 MB).
+                        // Do NOT set isDSD here: bytesPerSecond() returns
+                        // (dsdRate/8)*channels and dsdRate is 0 in passthrough, so
+                        // the buffer would collapse to MIN_BUFFER_SIZE (64 KB) — far
+                        // below the 256 KB prebuffer target — and writeAudio() would
+                        // deadlock (no SetAVTransportURI/Play → no sound on DSD).
                         audioFmt.sampleRate = 44100;
                         audioFmt.bitDepth = 24;
                         audioFmt.channels = 2;
-                        audioFmt.isDSD =
-                            contentType.find("dsf") != std::string::npos ||
-                            contentType.find("dff") != std::string::npos ||
-                            contentType.find("dsd") != std::string::npos;
                     }
                     audioServerPtr->setFormat(audioFmt);
                     audioServerPtr->setPassthroughMime(contentType);

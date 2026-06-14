@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.27-beta] - 2026-06-14
+
+### Fixed
+- **No sound on DSD (regression in 0.1.26-beta)**: the 0.1.26 "flag DSD in passthrough format" change set `isDSD=true` on the placeholder format. `AudioFormat::bytesPerSecond()` computes DSD throughput as `(dsdRate/8)*channels`, but `dsdRate` is 0 in passthrough (never parsed), so it returned 0 → the ring buffer collapsed to `MIN_BUFFER_SIZE` (64 KB), below the 256 KB prebuffer target → `writeAudio()` deadlocked before `SetAVTransportURI`/`Play` were ever sent (renderer stuck, no audio). Reverted: passthrough no longer flags DSD on the placeholder format (it is only used to size the ring buffer with PCM math, ~1 MB). The cosmetic "(DSD)" log marker is dropped again — correctness over cosmetics. (Found by regression-testing DSF on DirettaRendererUPnP)
+- **Hardened against the same class of deadlock**: `MIN_BUFFER_SIZE` raised from 64 KB to 512 KB so the ring buffer can never be smaller than the 256 KB prebuffer target, regardless of the (placeholder) format.
+
+### Changed
+- Version updated to 0.1.27-beta
+
 ## [0.1.26-beta] - 2026-06-14
 
 ### Added

@@ -157,7 +157,10 @@ private:
     std::condition_variable m_dataAvailable;    // Consumer waits
     std::condition_variable m_spaceAvailable;   // Producer waits
 
-    static constexpr size_t MIN_BUFFER_SIZE = 64 * 1024;       // 64 KB
+    // Must stay larger than main.cpp's PREBUFFER_BYTES (256 KB): the prebuffer
+    // loop fills the ring before the HTTP server starts draining it, so a
+    // capacity below the prebuffer target would deadlock writeAudio().
+    static constexpr size_t MIN_BUFFER_SIZE = 512 * 1024;      // 512 KB
     static constexpr size_t MAX_BUFFER_SIZE = 32 * 1024 * 1024; // 32 MB
     static constexpr double PCM_BUFFER_SECONDS = 4.0;
     static constexpr double DSD_BUFFER_SECONDS = 2.0;
