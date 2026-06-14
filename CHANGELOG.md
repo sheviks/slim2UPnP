@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.1.27-beta] - 2026-06-14
+
+### Fixed
+- **No sound on DSD (regression in 0.1.26-beta)**: the 0.1.26 "flag DSD in passthrough format" change set `isDSD=true` on the placeholder format. `AudioFormat::bytesPerSecond()` computes DSD throughput as `(dsdRate/8)*channels`, but `dsdRate` is 0 in passthrough (never parsed), so it returned 0 → the ring buffer collapsed to `MIN_BUFFER_SIZE` (64 KB), below the 256 KB prebuffer target → `writeAudio()` deadlocked before `SetAVTransportURI`/`Play` were ever sent (renderer stuck, no audio). Reverted: passthrough no longer flags DSD on the placeholder format (it is only used to size the ring buffer with PCM math, ~1 MB). The cosmetic "(DSD)" log marker is dropped again — correctness over cosmetics. (Found by regression-testing DSF on DirettaRendererUPnP)
+- **Hardened against the same class of deadlock**: `MIN_BUFFER_SIZE` raised from 64 KB to 512 KB so the ring buffer can never be smaller than the 256 KB prebuffer target, regardless of the (placeholder) format.
+
+### Changed
+- Version updated to 0.1.27-beta
+
+## [0.1.26-beta] - 2026-06-14
+
+### Added
+- **DIDL-Lite metadata in `SetAVTransportURI`/`SetNextAVTransportURI`** (Reported by smoothquark, issues #4 #5 #6): slim2UPnP previously set the transport URI with empty metadata. Strict DLNA renderers — GStreamer-based ones (e.g. Lyngdorf TDAI-3400) and DSD-capable ones (e.g. Zidoo Z3000 Pro) — need a `<res protocolInfo="http-get:*:MIME:DLNA.ORG_*">` descriptor to accept the URI. Without it the Lyngdorf never started playback and the Zidoo silently refused DSF streams (it never even connected to fetch the audio). A minimal DIDL-Lite item (with `protocolInfo` describing a non-seekable HTTP audio stream, `DLNA.ORG_OP=00`) is now generated and sent. Can be disabled for A/B testing with `--no-didl-metadata`.
+- **`contentFeatures.dlna.org` HTTP response header + HEAD support** in the audio server: GStreamer-based renderers send a `getContentFeatures.dlna.org` probe and a `HEAD`/probe request before streaming, and reject the stream if the server doesn't advertise DLNA content features. The server now returns `contentFeatures.dlna.org` (matching the DIDL `protocolInfo`) and answers `HEAD` requests with headers only.
+
+### Fixed
+- **Misleading `Format:` log line for DSD passthrough**: DSD streams were logged as `44100 Hz, 24-bit` (placeholder values used only to size the ring buffer) with no DSD marker. The format is now flagged as DSD from the content type, so the log shows `(DSD)` and the ring buffer uses the DSD size multiplier.
+
+### Changed
+- Version updated to 0.1.26-beta
+
+> **Note:** the DIDL-Lite / DLNA-header changes target renderers the maintainer does not own (Lyngdorf, Zidoo). They are standards-based and verified for well-formedness, but field-testing on those devices (via smoothquark) is pending. `--no-didl-metadata` is provided as a fallback.
+
+## [0.1.25-beta] - 2026-06-14
+
+### Changed
+- **Volume is no longer forced to 100% by default** (Reported by smoothquark, issue #6): slim2UPnP previously called `SetVolume(100)` on every renderer connect, which was intended for bit-perfect renderers that ignore volume (DirettaRendererUPnP). On a real amplifier/preamp such as the Lyngdorf TDAI-3400 this drove the output to full scale on startup — potentially dangerous. The renderer's volume is now left untouched by default. Forcing 100% is available as an opt-in via the new `--set-volume-100` flag (config `SET_VOLUME_100="yes"`, also exposed in the webUI), to be used **only** with renderers that ignore volume.
+
+### Added
+- `--set-volume-100` CLI flag / `SET_VOLUME_100` config var / webUI toggle to force the renderer volume to 100% on connect (off by default).
+
 ## [0.1.24-beta] - 2026-05-11
 
 ### Added

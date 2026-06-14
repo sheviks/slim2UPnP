@@ -72,11 +72,25 @@ public:
                            const std::string& metadata = "");
     bool setNextAVTransportURI(const std::string& uri,
                                const std::string& metadata = "");
+
+    /// Build minimal DIDL-Lite metadata (a single audio item with a
+    /// <res protocolInfo="http-get:*:MIME:DLNA.ORG_*"> entry) for a stream URL.
+    /// Strict DLNA renderers (GStreamer-based, or DSD-capable) need this in
+    /// CurrentURIMetaData/NextURIMetaData to accept the URI. The returned XML
+    /// is passed verbatim as the metadata arg; libupnp escapes it into the SOAP.
+    static std::string buildAudioDidl(const std::string& uri,
+                                      const std::string& mimeType);
     bool play(const std::string& speed = "1");
     bool stop();
     bool pause();
 
     // --- RenderingControl ---
+
+    /// If enabled, the renderer volume is forced to 100% on connect (for
+    /// bit-perfect renderers that ignore volume, e.g. DirettaRendererUPnP).
+    /// Disabled by default: forcing 100% on a real amp/preamp is dangerous.
+    /// Call before discoverRenderer()/connectDirect().
+    void setForceVolume100(bool enable) { m_forceVolume100 = enable; }
 
     bool setVolume(int volume);
     int getVolume();
@@ -159,6 +173,7 @@ private:
     RendererInfo m_renderer;
     std::atomic<bool> m_ready{false};
     bool m_initialized = false;
+    bool m_forceVolume100 = false;      // see setForceVolume100()
     mutable std::mutex m_mutex;
 
     // --- Watchdog ---

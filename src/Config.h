@@ -31,6 +31,10 @@ struct Config {
     int maxSampleRate = 1536000;
     bool dsdEnabled = true;
     bool calibrateElapsed = true;       // poll GetTransportInfo at start to align elapsed clock with renderer PLAYING state
+    bool forceVolume100 = false;        // force renderer volume to 100% on connect (bit-perfect renderers like DirettaRendererUPnP).
+                                        // OFF by default — forcing 100% on a real amp/preamp (e.g. Lyngdorf) is dangerous.
+    bool didlMetadata = true;           // send DIDL-Lite metadata (with <res protocolInfo>) in Set(Next)AVTransportURI.
+                                        // Needed by strict DLNA renderers (GStreamer-based, DSD). --no-didl-metadata to disable.
 
     // Logging
     bool verbose = false;

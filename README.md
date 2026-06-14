@@ -89,6 +89,10 @@ Audio:
   --max-rate <hz>          Max sample rate (default: 1536000)
   --no-dsd                 Disable DSD support
   --no-play-calibration    Disable renderer PLAYING-state elapsed calibration
+  --set-volume-100         Force renderer volume to 100% on connect
+                           (bit-perfect renderers only — see note below)
+  --no-didl-metadata       Don't send DIDL-Lite metadata in SetAVTransportURI
+                           (metadata is sent by default; needed by strict DLNA renderers)
 
 Logging:
   -v, --verbose            Debug output
@@ -98,6 +102,17 @@ Other:
   -V, --version            Show version
   -h, --help               Show help
 ```
+
+### Volume handling
+
+By default, slim2UPnP **does not touch the renderer's volume** — playback is
+bit-perfect at whatever level the renderer is already set to.
+
+`--set-volume-100` forces the renderer volume to 100% on connect. Use it **only**
+with bit-perfect renderers that ignore volume (e.g. DirettaRendererUPnP).
+
+> ⚠️ Do **not** enable `--set-volume-100` when the renderer is a real amplifier
+> or preamp (e.g. Lyngdorf): it would drive the output to full scale.
 
 ## Building
 
@@ -188,8 +203,12 @@ cmake -B build -DTARGET_MARCH=v4       # AVX-512
 ```bash
 git clone https://github.com/cometdom/slim2UPnP.git
 cd slim2UPnP
-sudo ./install.sh
+sudo ./install.sh           # downloads the latest released binary
+# or
+sudo ./install.sh --build   # compiles the current checkout instead
 ```
+
+> **Note:** plain `sudo ./install.sh` always installs the **latest published release**, regardless of which branch/commit you have checked out. To install the code you currently have (e.g. a feature/beta branch or local changes), use `sudo ./install.sh --build`, which compiles from source.
 
 ### Update to latest version
 

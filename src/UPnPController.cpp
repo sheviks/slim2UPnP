@@ -192,8 +192,12 @@ bool UPnPController::discoverRenderer(const std::string& rendererMatch,
     // Query protocol info after discovery
     queryProtocolInfo();
 
-    // Force volume to 100% for bit-perfect playback
-    setVolume(100);
+    // Force volume to 100% only when explicitly requested (bit-perfect
+    // renderers like DirettaRendererUPnP). Off by default — forcing 100%
+    // on a real amp/preamp is dangerous.
+    if (m_forceVolume100) {
+        setVolume(100);
+    }
 
     LOG_INFO("[UPnP] Renderer found: " << m_renderer.friendlyName
              << " (" << m_renderer.uuid << ")");
@@ -250,7 +254,9 @@ bool UPnPController::connectDirect(const std::string& descriptionURL) {
     }
 
     queryProtocolInfo();
-    setVolume(100);
+    if (m_forceVolume100) {
+        setVolume(100);
+    }
 
     LOG_INFO("[UPnP] Connected to: " << m_renderer.friendlyName
              << " (" << m_renderer.uuid << ")");
@@ -525,6 +531,50 @@ bool UPnPController::setNextAVTransportURI(const std::string& uri,
     }
     LOG_ERROR("[UPnP] SetNextAVTransportURI failed for: " << uri);
     return false;
+}
+
+namespace {
+// Escape the five XML predefined entities so the value is safe inside the
+// DIDL-Lite document (which libupnp will itself escape again into the SOAP).
+std::string xmlEscape(const std::string& in) {
+    std::string out;
+    out.reserve(in.size());
+    for (char c : in) {
+        switch (c) {
+            case '&':  out += "&amp;";  break;
+            case '<':  out += "&lt;";   break;
+            case '>':  out += "&gt;";   break;
+            case '"':  out += "&quot;"; break;
+            case '\'': out += "&apos;"; break;
+            default:   out += c;        break;
+        }
+    }
+    return out;
+}
+}  // namespace
+
+std::string UPnPController::buildAudioDidl(const std::string& uri,
+                                           const std::string& mimeType) {
+    // Non-seekable HTTP audio stream: OP=00 (no range/time-seek, matches the
+    // server's "Accept-Ranges: none"), FLAGS = streaming + background +
+    // http-stalling + DLNA 1.5. No DLNA.ORG_PN (formats like FLAC/DSF have no
+    // standard profile name) — strict renderers still accept a bare descriptor.
+    std::string protocolInfo = "http-get:*:" + mimeType +
+        ":DLNA.ORG_OP=00;DLNA.ORG_FLAGS=01700000000000000000000000000000";
+
+    return
+        "<DIDL-Lite "
+        "xmlns=\"urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/\" "
+        "xmlns:dc=\"http://purl.org/dc/elements/1.1/\" "
+        "xmlns:upnp=\"urn:schemas-upnp-org:metadata-1-0/upnp/\">"
+        "<item id=\"0\" parentID=\"-1\" restricted=\"1\">"
+        "<dc:title>slim2UPnP</dc:title>"
+        "<upnp:class>object.item.audioItem.musicTrack</upnp:class>"
+        "<res protocolInfo=\"" + xmlEscape(protocolInfo) + "\">"
+        + xmlEscape(uri) +
+        "</res>"
+        "</item>"
+        "</DIDL-Lite>";
 }
 
 bool UPnPController::play(const std::string& speed) {
