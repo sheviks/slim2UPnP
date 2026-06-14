@@ -72,6 +72,14 @@ public:
                            const std::string& metadata = "");
     bool setNextAVTransportURI(const std::string& uri,
                                const std::string& metadata = "");
+
+    /// Build minimal DIDL-Lite metadata (a single audio item with a
+    /// <res protocolInfo="http-get:*:MIME:DLNA.ORG_*"> entry) for a stream URL.
+    /// Strict DLNA renderers (GStreamer-based, or DSD-capable) need this in
+    /// CurrentURIMetaData/NextURIMetaData to accept the URI. The returned XML
+    /// is passed verbatim as the metadata arg; libupnp escapes it into the SOAP.
+    static std::string buildAudioDidl(const std::string& uri,
+                                      const std::string& mimeType);
     bool play(const std::string& speed = "1");
     bool stop();
     bool pause();

@@ -488,8 +488,10 @@ void AudioHttpServer::handleClient(int clientSocket) {
     if (reqLen <= 0) return;
     reqBuf[reqLen] = '\0';
 
-    // Basic HTTP request validation
-    if (strncmp(reqBuf, "GET ", 4) != 0) {
+    // Only GET and HEAD are supported. HEAD is used by some DLNA renderers
+    // (and the getContentFeatures.dlna.org probe) to fetch headers without a body.
+    bool isHead = (strncmp(reqBuf, "HEAD ", 5) == 0);
+    if (!isHead && strncmp(reqBuf, "GET ", 4) != 0) {
         const char* resp = "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\n\r\n";
         send(clientSocket, resp, strlen(resp), MSG_NOSIGNAL);
         return;
@@ -503,8 +505,17 @@ void AudioHttpServer::handleClient(int clientSocket) {
     }
     if (!m_readyToServe.load() || !m_running.load()) return;
 
-    // Build HTTP response headers
+    // Build HTTP response headers.
+    //
+    // DLNA compliance: strict renderers (notably GStreamer-based ones, e.g.
+    // Lyngdorf) send a `getContentFeatures.dlna.org` probe and expect a
+    // `contentFeatures.dlna.org` response header, otherwise they refuse the
+    // stream. We advertise a non-seekable HTTP audio stream:
+    //   DLNA.ORG_OP=00     no byte-range / time-seek operations (Accept-Ranges: none)
+    //   DLNA.ORG_FLAGS     streaming + background + http-stalling + DLNA 1.5
     std::string mimeType = getMimeType();
+    static const char* DLNA_CONTENT_FEATURES =
+        "DLNA.ORG_OP=00;DLNA.ORG_FLAGS=01700000000000000000000000000000";
     std::string responseHeader =
         "HTTP/1.1 200 OK\r\n"
         "Content-Type: " + mimeType + "\r\n"
@@ -512,13 +523,17 @@ void AudioHttpServer::handleClient(int clientSocket) {
         "Connection: close\r\n"
         "Cache-Control: no-cache\r\n"
         "transferMode.dlna.org: Streaming\r\n"
+        "contentFeatures.dlna.org: " + DLNA_CONTENT_FEATURES + "\r\n"
         "\r\n";
 
     // Send HTTP headers
     if (send(clientSocket, responseHeader.c_str(), responseHeader.size(), MSG_NOSIGNAL) < 0) {
-        LOG_ERROR("[AudioHttpServer] Failed to send HTTP header: " << strerror(errno));
+        LOG_DEBUG("[AudioHttpServer] Failed to send HTTP header: " << strerror(errno));
         return;
     }
+
+    // HEAD: headers only, no body (the renderer is just probing).
+    if (isHead) return;
 
     // Send audio container header (WAV or DSF) — skip in passthrough mode
     if (m_passthroughMime.empty()) {

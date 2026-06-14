@@ -91,6 +91,8 @@ Audio:
   --no-play-calibration    Disable renderer PLAYING-state elapsed calibration
   --set-volume-100         Force renderer volume to 100% on connect
                            (bit-perfect renderers only — see note below)
+  --no-didl-metadata       Don't send DIDL-Lite metadata in SetAVTransportURI
+                           (metadata is sent by default; needed by strict DLNA renderers)
 
 Logging:
   -v, --verbose            Debug output

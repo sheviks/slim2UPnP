@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.26-beta] - 2026-06-14
+
+### Added
+- **DIDL-Lite metadata in `SetAVTransportURI`/`SetNextAVTransportURI`** (Reported by smoothquark, issues #4 #5 #6): slim2UPnP previously set the transport URI with empty metadata. Strict DLNA renderers — GStreamer-based ones (e.g. Lyngdorf TDAI-3400) and DSD-capable ones (e.g. Zidoo Z3000 Pro) — need a `<res protocolInfo="http-get:*:MIME:DLNA.ORG_*">` descriptor to accept the URI. Without it the Lyngdorf never started playback and the Zidoo silently refused DSF streams (it never even connected to fetch the audio). A minimal DIDL-Lite item (with `protocolInfo` describing a non-seekable HTTP audio stream, `DLNA.ORG_OP=00`) is now generated and sent. Can be disabled for A/B testing with `--no-didl-metadata`.
+- **`contentFeatures.dlna.org` HTTP response header + HEAD support** in the audio server: GStreamer-based renderers send a `getContentFeatures.dlna.org` probe and a `HEAD`/probe request before streaming, and reject the stream if the server doesn't advertise DLNA content features. The server now returns `contentFeatures.dlna.org` (matching the DIDL `protocolInfo`) and answers `HEAD` requests with headers only.
+
+### Fixed
+- **Misleading `Format:` log line for DSD passthrough**: DSD streams were logged as `44100 Hz, 24-bit` (placeholder values used only to size the ring buffer) with no DSD marker. The format is now flagged as DSD from the content type, so the log shows `(DSD)` and the ring buffer uses the DSD size multiplier.
+
+### Changed
+- Version updated to 0.1.26-beta
+
+> **Note:** the DIDL-Lite / DLNA-header changes target renderers the maintainer does not own (Lyngdorf, Zidoo). They are standards-based and verified for well-formedness, but field-testing on those devices (via smoothquark) is pending. `--no-didl-metadata` is provided as a fallback.
+
 ## [0.1.25-beta] - 2026-06-14
 
 ### Changed

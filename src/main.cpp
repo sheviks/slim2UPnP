@@ -35,7 +35,7 @@
 #include <unistd.h>
 #include <poll.h>
 
-#define SLIM2UPNP_VERSION "0.1.25-beta"
+#define SLIM2UPNP_VERSION "0.1.26-beta"
 
 // ============================================
 // Globals
@@ -187,6 +187,9 @@ Config parseArguments(int argc, char* argv[]) {
         else if (arg == "--set-volume-100") {
             config.forceVolume100 = true;
         }
+        else if (arg == "--no-didl-metadata") {
+            config.didlMetadata = false;
+        }
         else if (arg == "--list-renderers" || arg == "-l") {
             config.listRenderers = true;
         }
@@ -224,6 +227,8 @@ Config parseArguments(int argc, char* argv[]) {
                       << "  --set-volume-100       Force renderer volume to 100% on connect\n"
                       << "                         (for bit-perfect renderers like DirettaRendererUPnP;\n"
                       << "                          OFF by default — unsafe on a real amp/preamp)\n"
+                      << "  --no-didl-metadata     Don't send DIDL-Lite metadata in SetAVTransportURI\n"
+                      << "                         (metadata is sent by default; needed by strict DLNA renderers)\n"
                       << "\n"
                       << "Logging:\n"
                       << "  -v, --verbose          Debug output (log level: DEBUG)\n"
@@ -480,6 +485,7 @@ int main(int argc, char* argv[]) {
     std::cout << "  Max Rate:   " << config.maxSampleRate << " Hz" << std::endl;
     std::cout << "  DSD:        " << (config.dsdEnabled ? "enabled" : "disabled") << std::endl;
     std::cout << "  Volume:     " << (config.forceVolume100 ? "forced to 100%" : "untouched") << std::endl;
+    std::cout << "  DIDL meta:  " << (config.didlMetadata ? "enabled" : "disabled") << std::endl;
     if (!config.macAddress.empty()) {
         std::cout << "  MAC:        " << config.macAddress << std::endl;
     }
@@ -673,9 +679,16 @@ int main(int argc, char* argv[]) {
                         audioFmt.bitDepth = bd ? bd : 16;
                         audioFmt.channels = ch;
                     } else {
-                        audioFmt.sampleRate = 44100;  // Default for compressed formats
+                        // Placeholder values — in passthrough the renderer decodes,
+                        // so these only size the ring buffer. Flag DSD so the buffer
+                        // uses the DSD multiplier and the log isn't misleading.
+                        audioFmt.sampleRate = 44100;
                         audioFmt.bitDepth = 24;
                         audioFmt.channels = 2;
+                        audioFmt.isDSD =
+                            contentType.find("dsf") != std::string::npos ||
+                            contentType.find("dff") != std::string::npos ||
+                            contentType.find("dsd") != std::string::npos;
                     }
                     audioServerPtr->setFormat(audioFmt);
                     audioServerPtr->setPassthroughMime(contentType);
@@ -828,10 +841,16 @@ int main(int argc, char* argv[]) {
                             currentSlot.store(1 - oldSlot);
                         }
                         bool doCalibrate = config.calibrateElapsed;
+                        bool sendDidl = config.didlMetadata;
                         std::thread([upnpPtr, audioServerPtr, &slimproto,
                                      &streamGeneration, thisGeneration,
-                                     &playStartNs, doCalibrate]() {
-                            upnpPtr->setAVTransportURI(audioServerPtr->getStreamURL());
+                                     &playStartNs, doCalibrate, sendDidl]() {
+                            std::string url = audioServerPtr->getStreamURL();
+                            std::string meta = sendDidl
+                                ? UPnPController::buildAudioDidl(
+                                      url, audioServerPtr->getMimeType())
+                                : "";
+                            upnpPtr->setAVTransportURI(url, meta);
                             if (streamGeneration.load() != thisGeneration) return;
                             upnpPtr->play();
                             slimproto->sendStat(StatEvent::STMl);
@@ -871,8 +890,12 @@ int main(int argc, char* argv[]) {
                         int oldSlot = currentSlot.load();
                         int newSlot = 1 - oldSlot;
                         std::string nextURL = servers[newSlot]->getStreamURL();
+                        std::string nextMeta = config.didlMetadata
+                            ? UPnPController::buildAudioDidl(
+                                  nextURL, servers[newSlot]->getMimeType())
+                            : "";
                         LOG_INFO("[Gapless] SetNextAVTransportURI: " << nextURL);
-                        upnpPtr->setNextAVTransportURI(nextURL);
+                        upnpPtr->setNextAVTransportURI(nextURL, nextMeta);
                         servers[oldSlot]->signalEndOfStream();
                         currentSlot.store(newSlot);
                         slimproto->sendStat(StatEvent::STMl);
