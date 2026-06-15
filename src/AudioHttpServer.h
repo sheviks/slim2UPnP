@@ -84,6 +84,13 @@ public:
     /// When set, handleClient serves raw bytes with this MIME type (no WAV/DSF header).
     void setPassthroughMime(const std::string& contentType);
 
+    /// Advertise a Content-Length in the HTTP response (0 = omit, the default).
+    /// Only set this when the exact number of bytes that will be served is known
+    /// (e.g. the total size from a DSF header) — it must match what we deliver.
+    /// Helps ffmpeg-based renderers do a single linear read instead of probing
+    /// with multiple Range requests. Reset to 0 by reset().
+    void setContentLength(uint64_t bytes) { m_contentLength = bytes; }
+
     /// Signal that prebuffering is done and clients can start reading.
     /// Call after filling the ring buffer with initial data.
     void setReadyToServe();
@@ -168,6 +175,7 @@ private:
     // --- Audio format ---
     AudioFormat m_format;
     std::string m_passthroughMime;  // If set, serve raw bytes with this MIME type
+    uint64_t m_contentLength = 0;   // If >0, advertised as HTTP Content-Length
     std::atomic<bool> m_formatReady{false};
     std::atomic<bool> m_readyToServe{false};  // Set after prebuffer is done
 

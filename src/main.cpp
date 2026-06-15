@@ -35,7 +35,7 @@
 #include <unistd.h>
 #include <poll.h>
 
-#define SLIM2UPNP_VERSION "0.1.27-beta"
+#define SLIM2UPNP_VERSION "0.1.28-beta"
 
 // ============================================
 // Globals
@@ -268,6 +268,7 @@ struct TrackInfo {
     uint32_t sampleRate = 0;    // 0 = unknown
     uint8_t  bitDepth = 0;      // 0 = unknown
     uint8_t  channels = 0;      // 0 = unknown
+    uint64_t fileSizeBytes = 0; // 0 = unknown (total stream size, e.g. from DSF header)
 };
 
 /// Parse track info (duration + format params) from the first bytes of an audio stream.
@@ -310,6 +311,17 @@ static TrackInfo parseTrackInfo(const uint8_t* data, size_t len,
     // DSF: parse header for sample count and rate
     if (contentType.find("dsf") != std::string::npos && len >= 60) {
         if (data[0] == 'D' && data[1] == 'S' && data[2] == 'D' && data[3] == ' ') {
+            // DSD chunk: total file size at offset 12 (8 bytes LE) — usable as
+            // HTTP Content-Length (helps ffmpeg-based renderers do a single read).
+            info.fileSizeBytes =
+                static_cast<uint64_t>(data[12]) |
+                (static_cast<uint64_t>(data[13]) << 8) |
+                (static_cast<uint64_t>(data[14]) << 16) |
+                (static_cast<uint64_t>(data[15]) << 24) |
+                (static_cast<uint64_t>(data[16]) << 32) |
+                (static_cast<uint64_t>(data[17]) << 40) |
+                (static_cast<uint64_t>(data[18]) << 48) |
+                (static_cast<uint64_t>(data[19]) << 56);
             // fmt chunk at offset 28: sample rate at offset 32 (4 bytes LE)
             // sample count at offset 40 (8 bytes LE)
             info.sampleRate =
@@ -779,6 +791,16 @@ int main(int argc, char* argv[]) {
                     TrackInfo trackInfo = parseTrackInfo(
                         headerBuf, headerLen, contentType);
                     uint32_t trackDurationSec = trackInfo.durationSec;
+
+                    // Advertise Content-Length when the exact stream size is known
+                    // (DSF header). In passthrough we deliver the whole file as-is,
+                    // so the header's total-file-size equals the bytes we serve.
+                    // Lets ffmpeg-based renderers do a single linear read.
+                    if (trackInfo.fileSizeBytes > 0) {
+                        audioServerPtr->setContentLength(trackInfo.fileSizeBytes);
+                        LOG_DEBUG("[Audio] Content-Length: "
+                                  << trackInfo.fileSizeBytes << " bytes (from header)");
+                    }
 
                     // --- Start UPnP playback ---
                     audioServerPtr->setReadyToServe();

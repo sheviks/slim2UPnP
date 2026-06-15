@@ -268,6 +268,7 @@ void AudioHttpServer::reset() {
     m_formatReady.store(false);
     m_readyToServe.store(false);
     m_passthroughMime.clear();
+    m_contentLength = 0;
 
     // Disconnect current client to force re-fetch
     {
@@ -523,8 +524,14 @@ void AudioHttpServer::handleClient(int clientSocket) {
         "Connection: close\r\n"
         "Cache-Control: no-cache\r\n"
         "transferMode.dlna.org: Streaming\r\n"
-        "contentFeatures.dlna.org: " + DLNA_CONTENT_FEATURES + "\r\n"
-        "\r\n";
+        "contentFeatures.dlna.org: " + DLNA_CONTENT_FEATURES + "\r\n";
+    // Advertise the exact size when known (e.g. from a DSF header). ffmpeg-based
+    // renderers then do a single linear read instead of probing with Range
+    // requests our single-pass streaming server can't satisfy.
+    if (m_contentLength > 0) {
+        responseHeader += "Content-Length: " + std::to_string(m_contentLength) + "\r\n";
+    }
+    responseHeader += "\r\n";
 
     // Send HTTP headers
     if (send(clientSocket, responseHeader.c_str(), responseHeader.size(), MSG_NOSIGNAL) < 0) {

@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.28-beta] - 2026-06-15
+
+### Added
+- **HTTP `Content-Length` for DSF streams** (experiment for ffmpeg-based renderers, issues #4 #5): some renderers fetch the stream with ffmpeg/libav (`Lavf` User-Agent) instead of GStreamer. ffmpeg probes the stream by opening multiple short-lived connections with `Range:` headers, expecting to re-read from byte 0 — which a single-pass streaming server can't satisfy (the ring buffer has already advanced), so every reconnect resets. Renderers that fetch with GStreamer (DirettaRendererUPnP, Denon HEOS) do one linear read and are unaffected. As a targeted mitigation, slim2UPnP now advertises `Content-Length` for DSF, read from the DSD chunk's total-file-size field (offset 12); in passthrough the whole file is delivered as-is, so the value is exact. Knowing the size up front lets ffmpeg do a single linear read instead of probing. Only emitted when the size is known (DSF) — other formats are unchanged.
+
+> **Note:** this is a best-effort fix for ffmpeg-based renderers (e.g. Zidoo Z3000 Pro), validated only structurally — field-testing via smoothquark is pending. It does not address compressed formats (FLAC) where the total size isn't known from the stream. slim2UPnP's primary target remains GStreamer-style linear-streaming renderers (DirettaRendererUPnP).
+
+### Changed
+- Version updated to 0.1.28-beta
+
 ## [0.1.27-beta] - 2026-06-14
 
 ### Fixed
