@@ -33,6 +33,17 @@ warn()  { echo -e "${YELLOW}[!]${NC} $*"; }
 error() { echo -e "${RED}[x]${NC} $*"; }
 step()  { echo -e "${CYAN}[>]${NC} $*"; }
 
+# Best-effort LAN IPv4 for the "open the web UI" hints. Prefer the source IP of
+# the default route; else the first non-link-local address from `hostname -I`
+# (avoids printing the 169.254.x address of a point-to-point Diretta link).
+lan_ip() {
+    local ip
+    ip="$(ip route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -1)"
+    [ -z "$ip" ] && ip="$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -Ev '^(169\.254\.|$)' | head -1)"
+    [ -z "$ip" ] && ip="<your-machine-ip>"
+    printf '%s' "$ip"
+}
+
 # ============================================================================
 # Detection
 # ============================================================================
@@ -484,7 +495,7 @@ install_systemd() {
 
     echo ""
     info "Next steps:"
-    echo "  1. Open the WebUI: http://$(hostname -I | awk '{print $1}'):8082"
+    echo "  1. Open the WebUI: http://$(lan_ip):8082"
     echo "     Or edit /etc/default/slim2upnp manually"
     echo "  2. Set your renderer name and LMS server"
     echo "  3. sudo systemctl start slim2upnp"
@@ -553,7 +564,7 @@ install_openrc() {
 
     echo ""
     info "Next steps:"
-    echo "  1. Open the WebUI: http://$(hostname -I | awk '{print $1}'):8082"
+    echo "  1. Open the WebUI: http://$(lan_ip):8082"
     echo "     Or edit /etc/conf.d/slim2upnp manually"
     echo "  2. Set your renderer name and LMS server"
     echo "  3. sudo rc-service slim2upnp start"
@@ -604,7 +615,7 @@ install_webui() {
         info "WebUI service installed (OpenRC)"
     fi
 
-    info "WebUI available at: http://$(hostname -I | awk '{print $1}'):8082"
+    info "WebUI available at: http://$(lan_ip):8082"
 }
 
 install_no_service() {
@@ -768,7 +779,7 @@ case "$INIT_SYSTEM" in
         ;;
 esac
 
-LOCAL_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+LOCAL_IP="$(lan_ip)"
 [ -z "$LOCAL_IP" ] && LOCAL_IP="<your-machine-ip>"
 
 echo ""
