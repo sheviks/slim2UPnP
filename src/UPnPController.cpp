@@ -291,7 +291,11 @@ bool UPnPController::rediscoverIfLost() {
         // connectDirect() handles all the bookkeeping on success.
         ok = connectDirect(m_bindURL);
     } else {
-        if (doSearchOnce(m_discoveryMatch, 6)) {
+        // When started without -r, pin rediscovery to the original renderer's
+        // friendly name so we don't accidentally adopt a different device.
+        const std::string searchFilter = m_discoveryMatch.empty()
+            ? m_renderer.friendlyName : m_discoveryMatch;
+        if (doSearchOnce(searchFilter, 6)) {
             queryProtocolInfo();
             if (m_forceVolume100) setVolume(100);
             m_ready.store(true);
@@ -868,8 +872,8 @@ IXML_Document* UPnPController::sendAction(
             ret == UPNP_E_BAD_RESPONSE) {
             if (m_ready.load()) {
                 LOG_WARN("[UPnP] Renderer appears unreachable — marking unavailable");
-                m_ready.store(false);
                 m_lostAt = std::chrono::steady_clock::now();
+                m_ready.store(false);
             }
         }
     }
